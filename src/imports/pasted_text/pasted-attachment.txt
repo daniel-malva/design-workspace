@@ -1,0 +1,442 @@
+Prompt focado e definitivo para corrigir a seleção múltipla de uma vez por todas:
+
+---
+
+## 🧱 PROMPT V38 — Design Workspace — Seleção múltipla: reescrita completa e definitiva
+
+---
+
+### STACK & BOAS PRÁTICAS
+
+```
+Stack: React + TypeScript + Tailwind CSS + shadcn/ui components
+Boas práticas:
+- Componentes reutilizáveis nomeados semanticamente por função
+- TypeScript com interfaces e tipos explícitos para todas as props
+- Tailwind para estilização, sem CSS inline ou arquivos .css separados
+- Estado global via Zustand (useDesignWorkspaceStore)
+```
+
+---
+
+### DIAGNÓSTICO DEFINITIVO
+
+Os prompts anteriores mantinham `e.stopPropagation()` nos elementos do canvas. Esse é o problema raiz: quando o usuário tenta iniciar um marquee arrastando sobre um elemento, o `mousedown` é interceptado pelo elemento — e o `CanvasFrame` nunca inicia o marquee. A solução é **remover completamente a responsabilidade de iniciar o marquee do `CanvasFrame`** e colocá-la num overlay separado acima de tudo, que captura eventos de mouse antes dos elementos.
+
+---
+
+### ARQUITETURA NOVA — Dois layers sobrepostos
+
+```
+CanvasFrame (600×600, bg-white)
+  ├── Elementos renderizados (z-index por ordem no array)
+  ├── MultiSelectionBoundingBox (z-40, pointer-events-none exceto handles)
+  └── InteractionOverlay (z-50, pointer-events-auto, COBRE TUDO)
+        ├── Captura mousedown para marquee e seleção
+        └── Passa eventos para baixo apenas quando necessário
+```
+
+O `InteractionOverlay` é um `div` absolutamente posicionado cobrindo o `CanvasFrame` inteiro. Ele recebe TODOS os `mousedown` primeiro — antes de qualquer elemento — e decide o que fazer:
+
+- Clique em área vazia → marquee ou deselecionar
+- Clique sobre um elemento → selecionar ou toggle (Shift)
+- Drag sobre elemento → mover
+
+---
+
+### IMPLEMENTAÇÃO
+
+#### `CanvasFrame.tsx` — estrutura limpa
+
+```tsx
+// CanvasFrame.tsx
+export function CanvasFrame() {
+  const { canvasElements, selectedElementIds } = useDesignWorkspaceStore()
+  const [marquee, setMarquee] = useState<MarqueeRect | null>(null)
+  const frameRef = useRef<HTMLDivElement>(null)
+
+  return (
+    <div
+      ref={frameRef}
+      className="relative bg-white shadow-xl select-none"
+      style={{ width: 600, height: 600 }}
+      // ✅ stopPropagation no CanvasFrame inteiro —
+      // impede que QUALQUER interação dentro do frame branco acione o pan cinza
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {/* Camada 1: Elementos (sem nenhum handler de mouse — passivo) */}
+      {canvasElements.map((element, index) => (
+        <CanvasElementView
+          key={element.id}
+          element={element}
+          zIndex={index}
+          isSelected={selectedElementIds.includes(element.id)}
+          isMultiSelected={
+            selectedElementIds.length > 1 &&
+            selectedElementIds.includes(element.id)
+          }
+        />
+      ))}
+
+      {/* Camada 2: Bounding box unificado (pointer-events-none exceto handles) */}
+      {selectedElementIds.length > 1 && (
+        <MultiSelectionBoundingBox selectedIds={selectedElementIds} />
+      )}
+
+      {/* Camada 3: Marquee visual */}
+      {marquee && (
+        <div
+          className="absolute pointer-events-none border border-[#5B4EFF] bg-[#5B4EFF1A]"
+          style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h, zIndex: 60 }}
+        />
+      )}
+
+      {/* Camada 4: Overlay de interação — cobre TUDO, captura todos os eventos */}
+      <InteractionOverlay
+        frameRef={frameRef}
+        onMarqueeChange={setMarquee}
+      />
+    </div>
+  )
+}
+```
+
+---
+
+#### `CanvasElementView.tsx` — apenas visual, sem handlers de mouse
+
+```tsx
+// CanvasElementView.tsx
+// Este componente é APENAS visual — não tem nenhum handler de mouse.
+// Toda a interação é gerenciada pelo InteractionOverlay acima.
+export function CanvasElementView({ element, zIndex, isSelected, isMultiSelected }: Props) {
+  return (
+    <div
+      className="absolute pointer-events-none" // ← pointer-events-none: não intercepta mouse
+      style={{
+        left: element.x,
+        top: element.y,
+        width: element.width,
+        height: element.height,
+        zIndex,
+      }}
+    >
+      <ElementContent element={element} />
+
+      {/* Bounding box individual — apenas seleção única */}
+      {isSelected && !isMultiSelected && (
+        <SelectionOverlay elementId={element.id} />
+      )}
+    </div>
+  )
+}
+```
+
+> **`pointer-events-none` em todos os elementos** — nenhum elemento intercepta mouse. O `InteractionOverlay` gerencia tudo.
+
+---
+
+#### `InteractionOverlay.tsx` — gerencia toda a interação
+
+```tsx
+// InteractionOverlay.tsx
+interface MarqueeRect { x: number; y: number; w: number; h: number }
+
+export function InteractionOverlay({
+  frameRef,
+  onMarqueeChange,
+}: {
+  frameRef: React.RefObject<HTMLDivElement>
+  onMarqueeChange: (m: MarqueeRect | null) => void
+}) {
+  const {
+    canvasElements,
+    selectedElementIds,
+    selectElement,
+    toggleElementSelection,
+    clearSelection,
+    setSelection,
+    updateElement,
+  } = useDesignWorkspaceStore()
+
+  function handleMouseDown(e: React.MouseEvent) {
+    if (e.button !== 0) return
+    // ✅ NÃO chama stopPropagation aqui —
+    // o CanvasFrame pai já fez stopPropagation para bloquear o pan
+
+    const rect = frameRef.current!.getBoundingClientRect()
+    const mouseX = e.clientX - rect.left
+    const mouseY = e.clientY - rect.top
+
+    // ── Detectar qual elemento está sob o cursor ──────────────────────────
+    // Iterar em ordem inversa (elementos do topo primeiro)
+    const hitElement = [...canvasElements]
+      .reverse()
+      .find(el =>
+        mouseX >= el.x &&
+        mouseX <= el.x + el.width &&
+        mouseY >= el.y &&
+        mouseY <= el.y + el.height
+      )
+
+    if (hitElement) {
+      // ── Clique sobre um elemento ────────────────────────────────────────
+      handleElementInteraction(e, hitElement, mouseX, mouseY, rect)
+    } else {
+      // ── Clique na área vazia → marquee ou deselecionar ──────────────────
+      handleEmptyAreaInteraction(e, mouseX, mouseY, rect)
+    }
+  }
+
+  function handleElementInteraction(
+    e: React.MouseEvent,
+    element: CanvasElement,
+    startMouseX: number,
+    startMouseY: number,
+    rect: DOMRect
+  ) {
+    if (e.shiftKey) {
+      // Shift+click → toggle na seleção múltipla
+      toggleElementSelection(element.id)
+      return
+    }
+
+    const isAlreadySelected = selectedElementIds.includes(element.id)
+
+    if (!isAlreadySelected) {
+      // Não estava selecionado → seleciona imediatamente
+      selectElement(element.id)
+    }
+    // Se já estava selecionado (simples ou múltiplo), não muda ainda — aguarda drag ou mouseup
+
+    // Iniciar tracking de drag
+    const startElX = element.x
+    const startElY = element.y
+    let dragging = false
+
+    function onMouseMove(ev: MouseEvent) {
+      const dx = ev.clientX - (rect.left + startMouseX)
+      const dy = ev.clientY - (rect.top  + startMouseY)
+
+      if (!dragging && Math.hypot(dx, dy) > 3) {
+        dragging = true
+        // Se estava em multi-seleção e começou a arrastar → mantém multi (move grupo futuro)
+        // Se estava em seleção simples → seleciona só este e move
+        if (selectedElementIds.length <= 1 || !selectedElementIds.includes(element.id)) {
+          selectElement(element.id)
+        }
+      }
+
+      if (dragging) {
+        updateElement(element.id, {
+          x: Math.max(0, startElX + dx),
+          y: Math.max(0, startElY + dy),
+        })
+      }
+    }
+
+    function onMouseUp() {
+      if (!dragging && isAlreadySelected && selectedElementIds.length > 1) {
+        // Clique sem drag em elemento que já estava em multi-seleção
+        // → reduz para seleção simples deste elemento
+        selectElement(element.id)
+      }
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
+
+  function handleEmptyAreaInteraction(
+    e: React.MouseEvent,
+    startX: number,
+    startY: number,
+    rect: DOMRect
+  ) {
+    clearSelection()
+
+    let curX = startX
+    let curY = startY
+    let marqueeActive = false
+
+    function onMouseMove(ev: MouseEvent) {
+      curX = ev.clientX - rect.left
+      curY = ev.clientY - rect.top
+      const w = Math.abs(curX - startX)
+      const h = Math.abs(curY - startY)
+
+      if (w > 3 || h > 3) {
+        marqueeActive = true
+        onMarqueeChange({
+          x: Math.min(startX, curX),
+          y: Math.min(startY, curY),
+          w, h,
+        })
+      }
+    }
+
+    function onMouseUp() {
+      if (marqueeActive) {
+        const selX = Math.min(startX, curX)
+        const selY = Math.min(startY, curY)
+        const selW = Math.abs(curX - startX)
+        const selH = Math.abs(curY - startY)
+
+        const hit = canvasElements.filter(el =>
+          el.x            < selX + selW &&
+          el.x + el.width  > selX &&
+          el.y            < selY + selH &&
+          el.y + el.height > selY
+        )
+
+        if (hit.length > 0) {
+          setSelection(hit.map(el => el.id))
+        }
+      }
+
+      onMarqueeChange(null)
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
+
+  return (
+    <div
+      className="absolute inset-0 cursor-default"
+      style={{ zIndex: 50 }} // ← cobre todos os elementos e bounding boxes
+      onMouseDown={handleMouseDown}
+    />
+  )
+}
+```
+
+---
+
+#### `SelectionOverlay.tsx` — handles acima do InteractionOverlay
+
+Os handles de resize precisam estar **acima do `InteractionOverlay`** para receber eventos. Usar `zIndex: 70`:
+
+```tsx
+// SelectionOverlay.tsx
+export function SelectionOverlay({ elementId }: { elementId: string }) {
+  const { startResize } = useResizeHandler(elementId)
+
+  return (
+    // pointer-events-none no container — apenas os handles têm pointer-events-auto
+    <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 55 }}>
+
+      {/* Bounding box visual */}
+      <div className="absolute inset-0 border-2 border-[#5B4EFF] rounded-[1px]" />
+
+      {/* Handles de resize — pointer-events-auto, acima do InteractionOverlay */}
+      {(Object.keys(HANDLE_POSITIONS) as ResizeHandle[]).map(handle => (
+        <div
+          key={handle}
+          className="absolute w-2 h-2 bg-white border-2 border-[#5B4EFF] rounded-[1px] pointer-events-auto"
+          style={{
+            ...HANDLE_POSITIONS[handle],
+            cursor: HANDLE_CURSORS[handle],
+            zIndex: 70, // acima do InteractionOverlay (z-50)
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation() // não dispara InteractionOverlay
+            startResize(e, handle)
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+```
+
+---
+
+### HIERARQUIA DE Z-INDEX — Referência
+
+```
+z-10  a  z-30  → Elementos do canvas (ordem do array)
+z-40           → MultiSelectionBoundingBox (pointer-events-none exceto handles)
+z-50           → InteractionOverlay (captura todos os cliques)
+z-55           → SelectionOverlay container (pointer-events-none)
+z-60           → Marquee visual (pointer-events-none)
+z-70           → Handles de resize e de grupo (pointer-events-auto, acima do overlay)
+```
+
+---
+
+### FLUXO COMPLETO — Todos os cenários
+
+```
+CENÁRIO 1: Clicar num elemento
+InteractionOverlay.mousedown
+  → hitElement encontrado
+  → selectElement(id) se não estava selecionado
+  → mouseup sem drag → nada muda
+
+CENÁRIO 2: Shift+click num segundo elemento
+InteractionOverlay.mousedown
+  → hitElement encontrado
+  → e.shiftKey === true
+  → toggleElementSelection(id)
+  → selectedElementIds = [id1, id2]
+  → MultiSelectionBoundingBox aparece ✓
+
+CENÁRIO 3: Arrastar na área vazia (marquee)
+InteractionOverlay.mousedown
+  → hitElement = undefined (área vazia)
+  → clearSelection()
+  → mousemove com dist > 3px → marquee ativo
+  → mouseup → calcular hit → setSelection([id1, id2, ...])
+  → MultiSelectionBoundingBox aparece ✓
+
+CENÁRIO 4: Arrastar num elemento (mover)
+InteractionOverlay.mousedown
+  → hitElement encontrado
+  → mousemove com dist > 3px → dragging = true
+  → updateElement com nova posição
+  → elemento se move ✓
+
+CENÁRIO 5: Arrastar handle de resize
+Handle.onMouseDown → stopPropagation
+  → InteractionOverlay NÃO recebe
+  → startResize inicia ✓
+
+CENÁRIO 6: Arrastar no canvas cinza (pan)
+CanvasFrame.onMouseDown → stopPropagation
+  → CanvasInfiniteArea NÃO recebe pan
+  → canvas branco NUNCA arrasta ✓
+```
+
+---
+
+### CHECKLIST DE VALIDAÇÃO
+
+- [ ] Clicar elemento A → selecionado, bounding box próprio visível
+- [ ] Shift+clicar elemento B → A e B selecionados, bounding box unificado
+- [ ] Shift+clicar elemento A novamente → apenas B selecionado
+- [ ] Arrastar área vazia → marquee azul aparece, elementos tocados são selecionados ao soltar
+- [ ] Arrastar elemento → move, canvas não arrasta
+- [ ] Arrastar canvas cinza → pan funciona
+- [ ] Handle de resize → funciona sem deselecionar
+- [ ] Click área branca vazia → deseleciona tudo
+- [ ] `Cmd+G` com 2+ selecionados → agrupa
+
+---
+
+### TOKENS DE DESIGN
+
+| Token | Valor |
+|---|---|
+| InteractionOverlay z-index | `50` |
+| Handle z-index | `70` |
+| Marquee border | `1px solid #5B4EFF` |
+| Marquee fill | `#5B4EFF1A` |
+| Drag threshold | `3px` |
+| Marquee threshold | `3px` |
+| `pointer-events` elementos | `none` — sempre |
+| `pointer-events` handles | `auto` — sempre |
