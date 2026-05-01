@@ -26,11 +26,23 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      // Alias @ to the src directory
       '@': path.resolve(__dirname, './src'),
     },
   },
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
+
+  server: {
+    proxy: {
+      // Proxy Google Sheets requests to bypass browser CORS restrictions.
+      // Requests to /gsheets-proxy/... are forwarded to docs.google.com/...
+      '/gsheets-proxy': {
+        target:       'https://docs.google.com',
+        changeOrigin: true,
+        secure:       true,
+        rewrite:      (path) => path.replace(/^\/gsheets-proxy/, ''),
+      },
+    },
+  },
 })

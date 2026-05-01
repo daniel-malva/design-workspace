@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Play, Pause, SkipBack, SkipForward,
-  ChevronUp, ChevronDown, Minus, Plus, Settings,
+  ChevronUp, ChevronDown, Minus, Plus, Settings, Music,
 } from 'lucide-react';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
 import {
@@ -18,6 +18,7 @@ export function Timeline() {
     isTimelineVisible,
     isTimelineExpanded,
     setIsTimelineExpanded,
+    audioPlaceholderInTimeline,
     layers,
     activePanel,
     selectedElementIds,
@@ -27,6 +28,19 @@ export function Timeline() {
   const [isPlaying, setIsPlaying]       = useState(false);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [zoomLevel, setZoomLevel]       = useState(40);
+  const [audioFlash, setAudioFlash]     = useState(false);
+
+  const prevAudioRef = useRef(false);
+
+  // Pulse the timeline ring once (3 beats) whenever audio is first added
+  useEffect(() => {
+    if (audioPlaceholderInTimeline && !prevAudioRef.current) {
+      setAudioFlash(true);
+      const t = setTimeout(() => setAudioFlash(false), 1800);
+      return () => clearTimeout(t);
+    }
+    prevAudioRef.current = audioPlaceholderInTimeline;
+  }, [audioPlaceholderInTimeline]);
 
   const totalFrames = 240;
 
@@ -60,6 +74,14 @@ export function Timeline() {
   if (!isTimelineVisible) return null;
 
   return (
+    <>
+    <style>{`
+      @keyframes tl-audio-ring {
+        0%,100% { box-shadow: 0 10px 15px -3px rgba(0,0,0,.10), 0 4px 6px -4px rgba(0,0,0,.10); }
+        15%,55% { box-shadow: 0 0 0 2.5px #ff7043, 0 0 18px rgba(255,112,67,.28), 0 10px 15px -3px rgba(0,0,0,.10); }
+        35%,75% { box-shadow: 0 10px 15px -3px rgba(0,0,0,.10), 0 4px 6px -4px rgba(0,0,0,.10); }
+      }
+    `}</style>
     <div
       className="absolute z-20 bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col"
       style={{
@@ -68,6 +90,7 @@ export function Timeline() {
         right: rightPosition,
         height,
         transition: 'left 200ms ease-in-out, right 200ms ease-in-out, height 200ms ease-in-out',
+        animation: audioFlash ? 'tl-audio-ring 1.8s ease-in-out' : undefined,
       }}
       onClick={e => e.stopPropagation()}
     >
@@ -162,11 +185,11 @@ export function Timeline() {
       {isTimelineExpanded && (
         <div className="flex flex-1 overflow-hidden border-t border-[#E2E2E2]">
           {/* Layer names column */}
-          <div className="w-44 shrink-0 border-r border-[#E2E2E2] overflow-y-auto">
+          <div className="w-44 shrink-0 border-r border-[#E2E2E2] overflow-y-auto flex flex-col">
             {layers.map(layer => (
               <div
                 key={layer.id}
-                className="flex items-center gap-2 px-3 h-8 border-b border-[#f0f0f0] hover:bg-[#f9f9f9]"
+                className="flex items-center gap-2 px-3 h-8 border-b border-[#f0f0f0] hover:bg-[#f9f9f9] shrink-0"
               >
                 <div
                   className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -180,12 +203,25 @@ export function Timeline() {
                 <span className="text-[11px] text-[#6B6B6B] truncate">{layer.name}</span>
               </div>
             ))}
+
+            {/* Audio Placeholder layer — pinned at bottom, light orange bg */}
+            {audioPlaceholderInTimeline && (
+              <div
+                className="flex items-center gap-2 px-3 h-8 border-b border-[rgba(255,112,67,0.2)] shrink-0 mt-auto"
+                style={{ backgroundColor: 'rgba(255,112,67,0.08)' }}
+              >
+                <Music size={10} className="shrink-0" style={{ color: '#ff7043' }} />
+                <span className="text-[11px] font-medium truncate" style={{ color: '#ff7043' }}>
+                  Audio Placeholder
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Track lanes */}
-          <div className="flex-1 relative overflow-x-auto">
+          <div className="flex-1 relative overflow-x-auto flex flex-col">
             {/* Ruler */}
-            <div className="flex h-5 border-b border-[#E2E2E2] bg-[#fafafa]">
+            <div className="flex h-5 border-b border-[#E2E2E2] bg-[#fafafa] shrink-0">
               {Array.from({ length: 11 }).map((_, i) => (
                 <div key={i} className="flex-1 border-r border-[#f0f0f0] px-1">
                   <span className="text-[9px] text-[#AAAAAA]">{i}s</span>
@@ -200,7 +236,7 @@ export function Timeline() {
                 : layer.type === 'image'            ? '#7b1fa2'
                 : '#3949ab';
               return (
-                <div key={layer.id} className="flex h-8 border-b border-[#f0f0f0] relative">
+                <div key={layer.id} className="flex h-8 border-b border-[#f0f0f0] relative shrink-0">
                   {Array.from({ length: 11 }).map((_, i) => (
                     <div key={i} className="flex-1 border-r border-[#f5f5f5]" />
                   ))}
@@ -226,6 +262,26 @@ export function Timeline() {
               );
             })}
 
+            {/* Audio Placeholder track — full-width bar, pinned at bottom */}
+            {audioPlaceholderInTimeline && (
+              <div
+                className="flex h-8 border-b relative shrink-0 mt-auto"
+                style={{
+                  borderColor: 'rgba(255,112,67,0.2)',
+                  backgroundColor: 'rgba(255,112,67,0.06)',
+                }}
+              >
+                {Array.from({ length: 11 }).map((_, i) => (
+                  <div key={i} className="flex-1 border-r border-[rgba(255,112,67,0.1)]" />
+                ))}
+                {/* Continuous audio bar spanning the full template */}
+                <div
+                  className="absolute h-3 top-1/2 -translate-y-1/2 rounded-sm"
+                  style={{ left: '2%', right: '2%', backgroundColor: 'rgba(255,112,67,0.45)' }}
+                />
+              </div>
+            )}
+
             {/* Playhead */}
             <div
               className="absolute top-0 bottom-0 w-px bg-red-400 pointer-events-none z-10"
@@ -237,5 +293,6 @@ export function Timeline() {
         </div>
       )}
     </div>
+    </>
   );
 }

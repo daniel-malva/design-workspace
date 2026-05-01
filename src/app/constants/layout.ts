@@ -43,3 +43,5 @@ export const ZOOM_TOOLBAR_BOTTOM_WITH_TIMELINE =
 // ZoomToolbar bottom — no timeline
 export const ZOOM_TOOLBAR_BOTTOM_NO_TIMELINE =
   PANEL_GAP                                          // 8px
+
+export const PAGE_STRIP_HEIGHT = 80   // px — per-row variant thumbnails strip

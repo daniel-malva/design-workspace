@@ -696,18 +696,13 @@ export function RightPanel() {
 
   // ── Content router ─────────────────────────────────────────────────
   const renderContent = () => {
-    // PRIORITY 0 — Configure
-    if (isConfigure) return <ConfigurePanel />;
-
-    // PRIORITY 1 — Settings
-    if (isSettings) return <SettingsPanel />;
-
-    // PRIORITY 2a — Multiple elements selected → group panel
+    // PRIORITY 0 — Multiple elements selected → group panel
     if (hasMultiSelection) {
       return <MultiSelectionPanel />;
     }
 
-    // PRIORITY 2b — Single element selected → properties panel
+    // PRIORITY 1 — Single element selected → properties panel
+    // (takes priority over Configure so users can edit elements while the feed panel is open)
     if (hasSingleSelection) {
       const selectedElement = canvasElements.find(el => el.id === selectedElementIds[0]);
       const isPlaceholder  = selectedElementType?.startsWith('placeholder-');
@@ -738,7 +733,13 @@ export function RightPanel() {
       );
     }
 
-    // PRIORITY 3 — Activity panel
+    // PRIORITY 2 — Settings
+    if (isSettings) return <SettingsPanel />;
+
+    // PRIORITY 3 — Configure (only when nothing is selected)
+    if (isConfigure) return <ConfigurePanel />;
+
+    // PRIORITY 4 — Activity panel
     if (showActivity) return <ActivityPanel />;
 
     return null;

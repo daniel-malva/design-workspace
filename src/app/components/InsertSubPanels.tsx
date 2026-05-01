@@ -382,81 +382,244 @@ export function InsertTextPanel() {
 // 2. DYNAMIC PLACEHOLDER PANEL
 // ══════════════════════════════════════════════════════════════════
 
-interface PlaceholderItem {
-  id: 'logo' | 'background' | 'jellybean' | 'media' | 'audio';
-  label: string;
-  borderColor: string;
-  badgeColor: string;
-  /** Default insertion size (background is overridden to 600×600 in the store) */
-  defaultW: number;
-  defaultH: number;
+type LogoAspect = 'square' | 'vertical' | 'horizontal';
+
+// semantic/success/main = #4caf50, action/hover fill = rgba(17,16,20,0.04)
+const PLACEHOLDER_DEFS = [
+  { id: 'product',          label: 'Product',          color: '#3949ab', isLogo: false, isBg: false, isAudio: false },
+  { id: 'image',            label: 'Image',            color: '#0277bd', isLogo: false, isBg: false, isAudio: false },
+  { id: 'background-image', label: 'Background Image', color: '#4caf50', isLogo: false, isBg: true,  isAudio: false },
+  { id: 'background-video', label: 'Background Video', color: '#4caf50', isLogo: false, isBg: true,  isAudio: false },
+  { id: 'primary-logo',     label: 'Primary Logo',     color: '#7b1fa2', isLogo: true,  isBg: false, isAudio: false },
+  { id: 'secondary-logo',   label: 'Secondary Logo',   color: '#c62828', isLogo: true,  isBg: false, isAudio: false },
+  { id: 'event-logo',       label: 'Event Logo',       color: '#1565c0', isLogo: true,  isBg: false, isAudio: false },
+  { id: 'audio',            label: 'Audio',            color: '#ff7043', isLogo: false, isBg: false, isAudio: true  },
+] as const;
+
+// SVG dashed border for preview cards — same dash spec as canvas rendering
+function PreviewDashedBorder({ color, radius = 4 }: { color: string; radius?: number }) {
+  const sw = 3;
+  return (
+    <svg
+      aria-hidden
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}
+    >
+      <rect
+        x={sw / 2}
+        y={sw / 2}
+        width={`calc(100% - ${sw}px)`}
+        height={`calc(100% - ${sw}px)`}
+        fill="none"
+        stroke={color}
+        strokeWidth={sw}
+        strokeDasharray="12 10"
+        rx={radius}
+        ry={radius}
+      />
+    </svg>
+  );
 }
 
-const placeholders: PlaceholderItem[] = [
-  { id: 'logo',       label: 'Logo',       borderColor: '#7B2FFF', badgeColor: '#7B2FFF', defaultW: 150, defaultH: 150 },
-  { id: 'background', label: 'Background', borderColor: '#22C55E', badgeColor: '#22C55E', defaultW: 600, defaultH: 600 },
-  { id: 'jellybean',  label: 'Jellybean',  borderColor: '#3B82F6', badgeColor: '#3B82F6', defaultW: 160, defaultH: 120 },
-  { id: 'media',      label: 'Media',      borderColor: '#3B82F6', badgeColor: '#3B82F6', defaultW: 200, defaultH: 150 },
-  { id: 'audio',      label: 'Audio',      borderColor: '#F97316', badgeColor: '#F97316', defaultW: 200, defaultH:  80 },
-];
+type PlaceholderDefId = typeof PLACEHOLDER_DEFS[number]['id'];
+
+const LOGO_ASPECTS: LogoAspect[] = ['square', 'vertical', 'horizontal'];
+const LOGO_ASPECT_LABEL: Record<LogoAspect, string> = { square: 'Square', vertical: 'Vertical', horizontal: 'Horizontal' };
+
+function PlaceholderBadge({ color, label }: { color: string; label: string }) {
+  const words = label.split(' ');
+  return (
+    <span
+      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white select-none text-center"
+      style={{
+        backgroundColor: color,
+        fontSize: 13,
+        fontFamily: "'Roboto', sans-serif",
+        fontWeight: 500,
+        padding: '4px 6px',
+        borderRadius: '4px',
+        lineHeight: '17px',
+        // stroke inner edge = 3px from box edge; 6px gap → badge starts at 9px each side → 100% − 18px
+        width: 'calc(100% - 18px)',
+        display: 'inline-block',
+      }}
+    >
+      {words.map((word, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <br />}
+          {word}
+        </React.Fragment>
+      ))}
+    </span>
+  );
+}
 
 export function InsertDynamicPlaceholderPanel() {
-  const { insertElement, canvasElements } = useDesignWorkspace();
+  const { insertElement, canvasElements, canvasWidth, canvasHeight, setIsTimelineExpanded, setAudioPlaceholderInTimeline } = useDesignWorkspace();
+  const [audioFeedback, setAudioFeedback] = useState(false);
+  const [hoveredId, setHoveredId] = useState<PlaceholderDefId | null>(null);
+  const [logoAspect, setLogoAspect] = useState<Record<string, LogoAspect>>({
+    'primary-logo':   'horizontal',
+    'secondary-logo': 'horizontal',
+    'event-logo':     'horizontal',
+  });
 
-  // Only one Background is allowed per canvas
-  const hasBackground = canvasElements.some(
-    el => el.placeholderVariant === 'background'
-  );
+  const W = canvasWidth;
+  const H = canvasHeight;
+
+  const hasBgImage = canvasElements.some(el => el.placeholderVariant === 'background-image' || el.placeholderVariant === 'background');
+  const hasBgVideo = canvasElements.some(el => el.placeholderVariant === 'background-video');
+
+  function getLogoDims(aspect: LogoAspect) {
+    switch (aspect) {
+      case 'square':     return { w: Math.round(W * 0.15), h: Math.round(W * 0.15) };
+      case 'vertical':   return { w: Math.round(W * 0.10), h: Math.round(H * 0.18) };
+      case 'horizontal': return { w: Math.round(W * 0.20), h: Math.round(H * 0.08) };
+    }
+  }
+
+  function handleInsert(id: PlaceholderDefId, aspect?: LogoAspect) {
+    const def = PLACEHOLDER_DEFS.find(d => d.id === id)!;
+
+    if (def.isAudio) {
+      setIsTimelineExpanded(true);
+      setAudioPlaceholderInTimeline(true);
+      setAudioFeedback(true);
+      setTimeout(() => setAudioFeedback(false), 2000);
+      return;
+    }
+    if (id === 'background-image' && hasBgImage) return;
+    if (id === 'background-video' && hasBgVideo) return;
+
+    let width: number, height: number;
+
+    if (def.isLogo) {
+      const a = aspect ?? logoAspect[id] ?? 'horizontal';
+      const d = getLogoDims(a);
+      width = d.w; height = d.h;
+    } else if (def.isBg) {
+      width = W; height = H;
+    } else if (id === 'product') {
+      width = Math.round(W * 0.65); height = Math.round(H * 0.65);
+    } else if (id === 'image') {
+      width = Math.round(W * 0.55); height = Math.round(H * 0.55);
+    } else {
+      width = 200; height = 150;
+    }
+
+    insertElement({
+      type:               `placeholder-${id}` as any,
+      placeholderVariant: id as any,
+      x: DEFAULT_X - width / 2,
+      y: DEFAULT_Y - height / 2,
+      width,
+      height,
+    });
+  }
 
   return (
     <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3">
-      <div className="grid grid-cols-2 gap-2 w-full">
-        {placeholders.map(p => {
-          const isBackground = p.id === 'background';
-          const disabled     = isBackground && hasBackground;
+      <div className="grid grid-cols-2 gap-3 w-full">
+        {PLACEHOLDER_DEFS.map(def => {
+          const { id, label, color, isLogo, isBg, isAudio } = def;
+          const disabled = (id === 'background-image' && hasBgImage) || (id === 'background-video' && hasBgVideo);
+          const isHovered = hoveredId === id;
 
           return (
             <div
-              key={p.id}
+              key={id}
               className="relative"
-              title={disabled ? 'Only one Background per template' : undefined}
+              onMouseEnter={() => !disabled && setHoveredId(id)}
+              onMouseLeave={() => setHoveredId(null)}
+              title={disabled ? 'Already added to this template' : undefined}
             >
               <button
+                onClick={() => !isLogo && handleInsert(id)}
                 disabled={disabled}
-                onClick={() => {
-                  if (disabled) return;
-                  insertElement({
-                    type:               `placeholder-${p.id}` as 'placeholder-logo',
-                    placeholderVariant: p.id,
-                    // Background: x/y/w/h are overridden in the store to 0,0,600,600
-                    x: DEFAULT_X - p.defaultW / 2,
-                    y: DEFAULT_Y - p.defaultH / 2,
-                    width:  p.defaultW,
-                    height: p.defaultH,
-                  });
-                }}
                 className={[
-                  'relative flex items-center justify-center rounded-xl bg-[#f5f5f5] h-[110px] w-full transition-opacity',
-                  disabled
-                    ? 'opacity-40 cursor-not-allowed'
-                    : 'cursor-pointer hover:opacity-80',
+                  'relative flex items-center justify-center h-[160px] w-full',
+                  'bg-[rgba(0,0,0,0.04)] border border-[rgba(0,0,0,0.12)] rounded-xl overflow-clip',
+                  'transition-opacity',
+                  disabled ? 'opacity-40 cursor-not-allowed' : isLogo ? 'cursor-default' : 'cursor-pointer hover:opacity-90',
                 ].join(' ')}
-                style={{ border: `2px dashed ${p.borderColor}` }}
               >
-                <span
-                  className="text-[11px] font-semibold text-white px-2 py-0.5 rounded-full"
-                  style={{ backgroundColor: p.badgeColor }}
-                >
-                  {p.label}
-                </span>
+                {/* Inner placeholder preview —
+                    • bg types   → fill entire card (absolute inset-0)
+                    • audio      → wide short horizontal rect
+                    • all others → square (70% of card width, aspect-ratio 1:1) */}
+                {isBg ? (
+                  <div
+                    className="absolute inset-0"
+                    style={{ backgroundColor: 'rgba(17,16,20,0.04)' }}
+                  >
+                    <PreviewDashedBorder color={color} radius={0} />
+                    <PlaceholderBadge color={color} label={label} />
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      position: 'relative',
+                      flexShrink: 0,
+                      backgroundColor: 'rgba(17,16,20,0.04)',
+                      borderRadius: '4px',
+                      ...(isAudio
+                        ? { width: '84%', height: '34%' }
+                        : { width: 100, height: 100 }
+                      ),
+                    }}
+                  >
+                    <PreviewDashedBorder color={color} radius={4} />
+                    <PlaceholderBadge color={color} label={label} />
+                  </div>
+                )}
 
-                {/* "Already added" badge overlay */}
+                {/* Audio: "Added to timeline" feedback overlay */}
+                {isAudio && audioFeedback && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/90 rounded-xl z-10">
+                    <span className="text-[11px] font-medium text-center leading-tight px-2" style={{ color }}>
+                      Added to<br />timeline ↓
+                    </span>
+                  </div>
+                )}
+
+                {/* Background: already-added badge */}
                 {disabled && (
-                  <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] text-[#22C55E] font-semibold whitespace-nowrap">
+                  <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-medium whitespace-nowrap" style={{ color }}>
                     Already added
                   </span>
                 )}
               </button>
+
+              {/* Logo hover submenu — vertical aspect picker */}
+              {isLogo && isHovered && !disabled && (
+                <div
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 rounded-xl z-20 px-3"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.97)', border: `1.5px solid ${color}` }}
+                  onMouseLeave={() => setHoveredId(null)}
+                >
+                  <span
+                    className="text-[10px] font-semibold text-center leading-tight mb-0.5"
+                    style={{ color }}
+                  >
+                    {label}
+                  </span>
+                  {LOGO_ASPECTS.map(a => (
+                    <button
+                      key={a}
+                      onClick={() => {
+                        setLogoAspect(prev => ({ ...prev, [id]: a }));
+                        handleInsert(id, a);
+                        setHoveredId(null);
+                      }}
+                      className="w-full py-1.5 rounded-lg text-[11px] font-medium transition-colors text-center"
+                      style={{ color, border: `1px solid ${color}`, backgroundColor: 'transparent' }}
+                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = color + '18')}
+                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                    >
+                      {LOGO_ASPECT_LABEL[a]}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}

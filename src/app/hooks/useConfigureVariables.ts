@@ -28,18 +28,36 @@ const TEXT_TYPES: CanvasElementType[] = [
 ];
 
 const MEDIA_TYPES: CanvasElementType[] = [
+  // Current types (audio excluded — it lives only in timeline, handled separately)
+  'placeholder-product',
+  'placeholder-image',
+  'placeholder-background-image',
+  'placeholder-background-video',
+  'placeholder-primary-logo',
+  'placeholder-secondary-logo',
+  'placeholder-event-logo',
+  // Legacy types
   'placeholder-logo',
   'placeholder-background',
   'placeholder-jellybean',
   'placeholder-media',
-  // NOTE: placeholder-audio is intentionally excluded
 ];
 
 const PLACEHOLDER_BADGE_COLORS: Partial<Record<CanvasElementType, string>> = {
-  'placeholder-logo':       '#7B2FFF',
-  'placeholder-background': '#22C55E',
-  'placeholder-jellybean':  '#3B82F6',
-  'placeholder-media':      '#3B82F6',
+  // Current
+  'placeholder-product':          '#3949ab',
+  'placeholder-image':            '#0277bd',
+  'placeholder-background-image': '#4caf50',
+  'placeholder-background-video': '#4caf50',
+  'placeholder-primary-logo':     '#7b1fa2',
+  'placeholder-secondary-logo':   '#c62828',
+  'placeholder-event-logo':       '#1565c0',
+  'placeholder-audio':            '#ff7043',
+  // Legacy
+  'placeholder-logo':             '#7b1fa2',
+  'placeholder-background':       '#4caf50',
+  'placeholder-jellybean':        '#3949ab',
+  'placeholder-media':            '#0277bd',
 };
 
 // Regex: matches {variableName} but not {{nested}}
@@ -64,13 +82,18 @@ const VAR_PATTERN = /\{([^{}]+)\}/g;
  *   jellybean, media) becomes one entry. Name is the live editable layer name.
  */
 export function useConfigureVariables() {
-  const { canvasElements } = useDesignWorkspace();
+  const { canvasElements, masterElements, audioPlaceholderInTimeline } = useDesignWorkspace();
+
+  // Always scan the master template for variables — not the current canvas view.
+  // When on a variant, canvasElements contains substituted values (e.g. "2026" not "{Year}"),
+  // which would make textVariables empty and trigger a cleanup→regenerate loop.
+  const sourceElements = masterElements.length > 0 ? masterElements : canvasElements;
 
   // ── Text variables ─────────────────────────────────────────────
   const textVariables = useMemo<TextVariable[]>(() => {
     const seen = new Map<string, string>(); // key → label
 
-    canvasElements
+    sourceElements
       .filter(el => TEXT_TYPES.includes(el.type) && el.content?.includes('{'))
       .forEach(el => {
         const content = el.content ?? '';
@@ -84,11 +107,11 @@ export function useConfigureVariables() {
       });
 
     return Array.from(seen.entries()).map(([key, label]) => ({ key, label }));
-  }, [canvasElements]);
+  }, [sourceElements]);
 
   // ── Media variables ────────────────────────────────────────────
   const mediaVariables = useMemo<MediaVariable[]>(() => {
-    return canvasElements
+    const fromCanvas = sourceElements
       .filter(el => MEDIA_TYPES.includes(el.type))
       .map(el => ({
         id:         el.id,
@@ -97,7 +120,20 @@ export function useConfigureVariables() {
         variant:    el.placeholderVariant ?? '',
         badgeColor: PLACEHOLDER_BADGE_COLORS[el.type] ?? '#6B7280',
       }));
-  }, [canvasElements]);
+
+    // Audio lives only in the timeline (never in canvasElements); synthesise the entry
+    if (audioPlaceholderInTimeline) {
+      fromCanvas.push({
+        id:         'audio-placeholder',
+        name:       'Audio Placeholder',
+        type:       'placeholder-audio',
+        variant:    'audio',
+        badgeColor: '#ff7043',
+      });
+    }
+
+    return fromCanvas;
+  }, [sourceElements, audioPlaceholderInTimeline]);
 
   const hasAnyVariable = textVariables.length > 0 || mediaVariables.length > 0;
 

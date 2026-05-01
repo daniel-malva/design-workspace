@@ -27,37 +27,104 @@ import type { ResizeGuide } from '../hooks/useResizeGuides';
 // PLACEHOLDER ELEMENT
 // ═══════════════════════════════════════════════════════════════════
 
-const placeholderConfig: Record<string, { borderColor: string; badgeColor: string; label: string }> = {
-  logo:       { borderColor: '#7B2FFF', badgeColor: '#7B2FFF', label: 'Logo'       },
-  background: { borderColor: '#22C55E', badgeColor: '#22C55E', label: 'Background' },
-  jellybean:  { borderColor: '#3B82F6', badgeColor: '#3B82F6', label: 'Jellybean'  },
-  media:      { borderColor: '#3B82F6', badgeColor: '#3B82F6', label: 'Media'      },
-  audio:      { borderColor: '#F97316', badgeColor: '#F97316', label: 'Audio'      },
+// Figma tokens — file X4fBgtV9XD7b5Wy93GQmYw
+// semantic/success/main=#4caf50 · action/hover=rgba(17,16,20,0.04)
+const PLACEHOLDER_CFG: Record<string, { color: string; label: string; shortLabel: string }> = {
+  // Legacy
+  logo:       { color: '#7b1fa2', label: 'Logo',             shortLabel: 'Logo'       },
+  background: { color: '#4caf50', label: 'Background',       shortLabel: 'Background' },
+  jellybean:  { color: '#3949ab', label: 'Jellybean',        shortLabel: 'Jellybean'  },
+  media:      { color: '#0277bd', label: 'Media',            shortLabel: 'Media'      },
+  audio:      { color: '#ff7043', label: 'Audio',            shortLabel: 'Audio'      },
+  // New
+  product:            { color: '#3949ab', label: 'Product',          shortLabel: 'Product'    },
+  image:              { color: '#0277bd', label: 'Image',            shortLabel: 'Image'      },
+  'background-image': { color: '#4caf50', label: 'Background Image', shortLabel: 'Background' },
+  'background-video': { color: '#4caf50', label: 'Background Video', shortLabel: 'Bg. Video'  },
+  'primary-logo':     { color: '#7b1fa2', label: 'Primary Logo',     shortLabel: 'Primary'    },
+  'secondary-logo':   { color: '#c62828', label: 'Secondary Logo',   shortLabel: 'Secondary'  },
+  'event-logo':       { color: '#1565c0', label: 'Event Logo',       shortLabel: 'Event'      },
 };
 
-function PlaceholderElement({ variant }: { variant: string }) {
-  const cfg = placeholderConfig[variant] ?? placeholderConfig['media'];
+// SVG dashed border — larger dash (12px) / gap (10px) per Figma spec
+function PlaceholderDashedBorder({ color, radius }: { color: string; radius: number }) {
+  const sw = 3;
+  return (
+    <svg
+      aria-hidden
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}
+    >
+      <rect
+        x={sw / 2}
+        y={sw / 2}
+        width={`calc(100% - ${sw}px)`}
+        height={`calc(100% - ${sw}px)`}
+        fill="none"
+        stroke={color}
+        strokeWidth={sw}
+        strokeDasharray="12 10"
+        rx={radius}
+        ry={radius}
+      />
+    </svg>
+  );
+}
 
-  // Background spans the entire canvas frame — no rounded corners
-  const isBackground = variant === 'background';
+function PlaceholderElement({ variant, width, height }: { variant: string; width: number; height: number }) {
+  const cfg        = PLACEHOLDER_CFG[variant] ?? PLACEHOLDER_CFG['media'];
+  const isBg       = variant === 'background' || variant === 'background-image' || variant === 'background-video';
+  const minDim     = Math.min(width, height);
+
+  // ── Adaptive label — Figma breakpoints ──────────────────────────────
+  // min(w,h) ≥ 200 → large (20px, 500 weight, px-32 py-16, multi-line)
+  // min(w,h) ≥ 50  → compact (12px, 400 weight, p-4, single line, short)
+  // min(w,h) < 50  → no label
+  const labelTier: 'large' | 'compact' | 'none' =
+    minDim >= 200 ? 'large' : minDim >= 50 ? 'compact' : 'none';
+
+  const badgeStyle: React.CSSProperties =
+    labelTier === 'large'
+      ? {
+          backgroundColor: cfg.color,
+          fontSize: 14,
+          fontFamily: "'Roboto', sans-serif",
+          fontWeight: 500,
+          letterSpacing: '0.15px',
+          lineHeight: 1.3,
+          paddingTop: 8, paddingBottom: 8,
+          paddingLeft: 6, paddingRight: 6,
+          borderRadius: '4px',
+          textAlign: 'center',
+          whiteSpace: 'nowrap',
+          maxHeight: 35,
+          overflow: 'hidden',
+        }
+      : {
+          backgroundColor: cfg.color,
+          fontSize: 12,
+          fontFamily: "'Roboto', sans-serif",
+          fontWeight: 400,
+          lineHeight: '12px',
+          padding: '4px',
+          borderRadius: '4px',
+          whiteSpace: 'nowrap',
+        };
 
   return (
     <div
-      className={[
-        'w-full h-full flex items-center justify-center',
-        isBackground ? '' : 'rounded-lg',
-      ].join(' ')}
+      className="w-full h-full relative flex items-center justify-center"
       style={{
-        border: `2px dashed ${cfg.borderColor}`,
-        backgroundColor: cfg.borderColor + (isBackground ? '10' : '18'),
+        backgroundColor: 'rgba(17,16,20,0.04)',  // semantic/action/hover token
+        borderRadius:    isBg ? 0 : '4px',
       }}
     >
-      <span
-        className="text-[11px] font-semibold text-white px-2 py-0.5 rounded-full"
-        style={{ backgroundColor: cfg.badgeColor }}
-      >
-        {cfg.label}
-      </span>
+      <PlaceholderDashedBorder color={cfg.color} radius={isBg ? 0 : 4} />
+
+      {labelTier !== 'none' && (
+        <span className="relative text-white select-none" style={badgeStyle}>
+          {labelTier === 'large' ? cfg.label : cfg.shortLabel}
+        </span>
+      )}
     </div>
   );
 }
@@ -184,7 +251,20 @@ function ElementContent({ element }: { element: CanvasElement }) {
     case 'placeholder-jellybean':
     case 'placeholder-media':
     case 'placeholder-audio':
-      return <PlaceholderElement variant={element.placeholderVariant ?? 'media'} />;
+    case 'placeholder-product':
+    case 'placeholder-image':
+    case 'placeholder-background-image':
+    case 'placeholder-background-video':
+    case 'placeholder-primary-logo':
+    case 'placeholder-secondary-logo':
+    case 'placeholder-event-logo':
+      return (
+        <PlaceholderElement
+          variant={element.placeholderVariant ?? 'media'}
+          width={element.width}
+          height={element.height}
+        />
+      );
 
     case 'shape':
       return <ShapeElement variant={element.shapeVariant ?? 'square'} style={element.style} />;

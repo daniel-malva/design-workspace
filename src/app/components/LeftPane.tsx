@@ -12,6 +12,7 @@ import type { CanvasElement, Layer } from '../store/useDesignWorkspaceStore';
 import { defaultLayerName } from '../store/useDesignWorkspaceStore';
 import { InsertSubPanel } from './InsertSubPanels';
 import { ImagesVideoOverflowMenu } from './ImagesVideoOverflowMenu';
+import { downloadSingleHtml5, downloadHtml5Zip } from '../utils/html5Export';
 
 interface InsertItem {
   id: InsertMenuItem;
@@ -442,6 +443,7 @@ function LayersPanel() {
     setSelectedElement,
     setLayerVisibility,
     setLayerLocked,
+    reorderElement,
     reparentElement,
     setDragTargetGroupId,
   } = useDesignWorkspace();
@@ -467,10 +469,11 @@ function LayersPanel() {
     }
 
     const { draggingId, overId, overZone } = dragState;
-    const target = canvasElements.find(el => el.id === overId);
+    const target   = canvasElements.find(el => el.id === overId);
+    const dragging = canvasElements.find(el => el.id === draggingId);
 
     // Guard: can't drop on itself
-    if (!target || draggingId === overId) {
+    if (!target || !dragging || draggingId === overId) {
       setDragState(null);
       setDragTargetGroupId(null);
       return;
@@ -479,12 +482,32 @@ function LayersPanel() {
     if (overZone === 'inside' && target.type === 'group') {
       // Drop INSIDE a group → reparent into that group
       reparentElement(draggingId, overId);
-    } else if (target.groupId && overZone !== 'inside') {
-      // Drop on a sibling inside a group → reparent into the same group
-      reparentElement(draggingId, target.groupId);
     } else {
-      // Drop outside any group → promote to top-level
-      reparentElement(draggingId, null);
+      // before/after → reorder z-position in canvasElements
+      // Layer panel shows elements in REVERSE order (top of panel = last in array = highest z).
+      // "before" in panel (above target) = higher z = later in canvasElements array.
+      // "after"  in panel (below target) = lower z  = earlier in canvasElements array.
+      const fromIndex = canvasElements.findIndex(el => el.id === draggingId);
+      const toIndex   = canvasElements.findIndex(el => el.id === overId);
+
+      if (fromIndex !== -1 && toIndex !== -1) {
+        let insertAt: number;
+        if (overZone === 'before') {
+          insertAt = fromIndex < toIndex ? toIndex : toIndex + 1;
+        } else {
+          insertAt = fromIndex > toIndex ? toIndex : Math.max(0, toIndex - 1);
+        }
+        if (fromIndex !== insertAt) {
+          reorderElement(fromIndex, insertAt);
+        }
+      }
+
+      // Handle group membership change if needed
+      if (target.groupId && dragging.groupId !== target.groupId) {
+        reparentElement(draggingId, target.groupId);
+      } else if (!target.groupId && dragging.groupId) {
+        reparentElement(draggingId, null);
+      }
     }
 
     setDragState(null);
@@ -683,13 +706,61 @@ function ConfigurePanel() {
 }
 
 function ExportPanel() {
-  const [format, setFormat] = useState('png');
+  const [format, setFormat]           = useState('html5');
   const [destination, setDestination] = useState('local');
+  const [exporting, setExporting]     = useState(false);
+
+  const {
+    canvasElements,
+    canvasWidth,
+    canvasHeight,
+    activeVariantId,
+    variants,
+    masterElements,
+  } = useDesignWorkspace();
+
   const formats = ['png', 'jpg', 'gif', 'mp4', 'html5'];
+  const isHtml5 = format === 'html5';
+  const isLocal = destination === 'local';
+
+  const handleExport = () => {
+    if (!isHtml5 || !isLocal) return; // only HTML5 + local is implemented
+
+    setExporting(true);
+    try {
+      if (variants.length > 0) {
+        // Export all variants as a zip; include master too
+        const masterEls = masterElements.length > 0 ? masterElements : canvasElements;
+        downloadHtml5Zip(
+          [
+            { name: 'Master', elements: masterEls },
+            ...variants.map(v => ({ name: v.name, elements: v.elements })),
+          ],
+          canvasWidth,
+          canvasHeight,
+          'ads.zip',
+        );
+      } else {
+        // Single ad — export the current canvas view
+        downloadSingleHtml5(canvasElements, canvasWidth, canvasHeight, 'ad.html');
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportLabel = () => {
+    if (!isHtml5 || !isLocal) return 'Export Asset';
+    if (variants.length > 0) return `Download ZIP (${variants.length + 1} files)`;
+    return 'Download HTML5';
+  };
+
   return (
     <>
       <PanelHeader title="Export" />
       <div className="p-4 flex flex-col gap-4 overflow-y-auto flex-1">
+
+        {/* Format */}
         <div className="flex flex-col gap-1.5">
           <label className="text-[10px] text-[#6B6B6B] font-semibold uppercase tracking-wider">Format</label>
           <div className="grid grid-cols-3 gap-1.5">
@@ -701,10 +772,15 @@ function ExportPanel() {
             ))}
           </div>
         </div>
+
+        {/* Destination */}
         <div className="flex flex-col gap-1.5">
           <label className="text-[10px] text-[#6B6B6B] font-semibold uppercase tracking-wider">Destination</label>
           <div className="flex flex-col gap-1.5">
-            {[{ id: 'local', label: 'Download locally', icon: <FileDown size={14} /> }, { id: 'platform', label: 'Save to platform', icon: <FileJson size={14} /> }].map(d => (
+            {[
+              { id: 'local',    label: 'Download locally', icon: <FileDown size={14} /> },
+              { id: 'platform', label: 'Save to platform', icon: <FileJson size={14} /> },
+            ].map(d => (
               <button key={d.id} onClick={() => setDestination(d.id)}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors ${destination === d.id ? 'border-[#5B4EFF] bg-[rgba(91,78,255,0.06)]' : 'border-[#E2E2E2] hover:bg-[#f5f5f5]'}`}>
                 <span className={destination === d.id ? 'text-[#5B4EFF]' : 'text-[#6B6B6B]'}>{d.icon}</span>
@@ -713,14 +789,33 @@ function ExportPanel() {
             ))}
           </div>
         </div>
-        <div className="flex gap-2">
-          {['1x', '2x', '3x'].map(s => (
-            <button key={s} className="flex-1 py-2 bg-[#f5f5f5] border border-[#E2E2E2] rounded-lg text-[11px] font-semibold text-[#6B6B6B] hover:border-[#5B4EFF] hover:text-[#5B4EFF] transition-colors">{s}</button>
-          ))}
-        </div>
-        <button className="w-full bg-[#5B4EFF] text-white text-[12px] font-semibold py-2.5 rounded-xl hover:bg-[#4a3ee0] transition-colors flex items-center justify-center gap-2">
-          <FileDown size={14} /> Export Asset
+
+        {/* Scale — only for raster formats */}
+        {!isHtml5 && (
+          <div className="flex gap-2">
+            {['1x', '2x', '3x'].map(s => (
+              <button key={s} className="flex-1 py-2 bg-[#f5f5f5] border border-[#E2E2E2] rounded-lg text-[11px] font-semibold text-[#6B6B6B] hover:border-[#5B4EFF] hover:text-[#5B4EFF] transition-colors">{s}</button>
+            ))}
+          </div>
+        )}
+
+        {/* Not-yet-implemented notice */}
+        {(!isHtml5 || !isLocal) && (
+          <p className="text-[11px] text-[#9CA3AF] text-center">
+            {isHtml5 ? 'Save to platform coming soon.' : 'This format is coming soon.'}
+          </p>
+        )}
+
+        {/* Export button */}
+        <button
+          onClick={handleExport}
+          disabled={exporting || !isHtml5 || !isLocal}
+          className="w-full bg-[#5B4EFF] text-white text-[12px] font-semibold py-2.5 rounded-xl hover:bg-[#4a3ee0] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+        >
+          <FileDown size={14} />
+          {exporting ? 'Exporting…' : exportLabel()}
         </button>
+
       </div>
     </>
   );

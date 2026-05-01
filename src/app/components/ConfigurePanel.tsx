@@ -1,11 +1,101 @@
 import { useState, useEffect, type ReactNode } from 'react';
-import { FilePlus, Settings2, X, ChevronDown, LayoutTemplate } from 'lucide-react';
+import { FilePlus, Settings2, X, ChevronDown, LayoutTemplate, ExternalLink, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { Separator } from './ui/separator';
 import { RightPanelHeader } from './RightPanelHeader';
 import { BrandKitSelector } from './BrandKitSelector';
 import { useConfigureVariables } from '../hooks/useConfigureVariables';
 import type { TextVariable, MediaVariable } from '../hooks/useConfigureVariables';
+import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
+
+// ══════════════════════════════════════════════════════════════════
+// FEED REGISTRY
+// ══════════════════════════════════════════════════════════════════
+
+type FeedType = 'google-sheets' | 'csv' | 'json' | 'api';
+
+interface FeedOption {
+  id:           string;
+  label:        string;
+  type:         FeedType;
+  url:          string;
+  csvExportUrl: string;
+}
+
+const PRESET_FEEDS: FeedOption[] = [
+  {
+    id:           'gsheet-apr-1844900552',
+    label:        'APR Vehicle Feed',
+    type:         'google-sheets',
+    url:          'https://docs.google.com/spreadsheets/d/1krXFKvgnN3YBh3d7aY-ZCdbR3Ql63Qomzs3MJYB5v6s/edit?gid=1844900552#gid=1844900552',
+    csvExportUrl: 'https://docs.google.com/spreadsheets/d/1krXFKvgnN3YBh3d7aY-ZCdbR3Ql63Qomzs3MJYB5v6s/export?format=csv&gid=1844900552',
+  },
+];
+
+// ── CSV helpers ────────────────────────────────────────────────────
+
+function parseCSV(csv: string): { headers: string[]; rows: Record<string, string>[]; rowCount: number } {
+  const lines = csv.split('\n').filter(l => l.trim().length > 0);
+  if (lines.length === 0) return { headers: [], rows: [], rowCount: 0 };
+
+  function parseLine(line: string): string[] {
+    const fields: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (const ch of line) {
+      if (ch === '"') { inQuotes = !inQuotes; }
+      else if (ch === ',' && !inQuotes) { fields.push(current.trim()); current = ''; }
+      else { current += ch; }
+    }
+    fields.push(current.trim());
+    return fields;
+  }
+
+  const headers   = parseLine(lines[0]).filter(Boolean);
+  const MAX_ROWS  = 50;
+  const dataLines = lines.slice(1, MAX_ROWS + 1);
+
+  const rows: Record<string, string>[] = dataLines.map(line => {
+    const values = parseLine(line);
+    const row: Record<string, string> = {};
+    headers.forEach((h, i) => { row[h] = values[i] ?? ''; });
+    return row;
+  });
+
+  return { headers, rows, rowCount: lines.length - 1 };
+}
+
+// Normalize a string for fuzzy matching: lowercase, strip non-alphanumeric
+function norm(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Find the best column match for a variable key/name. Returns '' if none found.
+function autoMatchColumn(hint: string, columns: string[]): string {
+  const h = norm(hint);
+  return columns.find(c => norm(c) === h) ?? '';
+}
+
+// ── Google Sheets icon (inline SVG — no external dependency) ──────
+function GoogleSheetsIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect width="24" height="24" rx="3" fill="#0F9D58" />
+      <rect x="5" y="6"  width="14" height="1.8" rx=".5" fill="white" fillOpacity=".9" />
+      <rect x="5" y="10" width="14" height="1.8" rx=".5" fill="white" fillOpacity=".9" />
+      <rect x="5" y="14" width="14" height="1.8" rx=".5" fill="white" fillOpacity=".9" />
+      <rect x="5" y="6"  width="1.8" height="9.8" rx=".5" fill="white" fillOpacity=".9" />
+      <rect x="11" y="6" width="1.8" height="9.8" rx=".5" fill="white" fillOpacity=".9" />
+    </svg>
+  );
+}
+
+const FEED_TYPE_LABELS: Record<FeedType, string> = {
+  'google-sheets': 'Google Sheets',
+  'csv':           'CSV',
+  'json':          'JSON',
+  'api':           'API',
+};
 
 // ══════════════════════════════════════════════════════════════════
 // LOCAL TYPES
@@ -98,27 +188,125 @@ function ConfigureTextBlock({
 // TEXT BLOCK — Feed (column-mapping selects per variable)
 // ══════════════════════════════════════════════════════════════════
 
+function AutoBadge() {
+  return (
+    <span className="text-[9px] text-[#0b7a43] bg-[#e0f5ea] px-1.5 py-0.5 rounded-full leading-none font-medium shrink-0">
+      auto
+    </span>
+  );
+}
+
 function ConfigureFeedTextBlock({
-  variables, values, onChange,
+  variables, values, onChange, columns,
 }: {
   variables: TextVariable[];
   values:    Record<string, string>;
   onChange:  (key: string, val: string) => void;
+  columns:   string[];
 }) {
   return (
     <SectionCard title="Text">
       <div className="flex flex-col gap-3 w-full">
-        {variables.map(({ key, label }) => (
-          <div key={key} className="flex flex-col gap-1 w-full">
-            <FieldLabel>{label}</FieldLabel>
-            <ConfigSelect
-              value={values[key] ?? ''}
-              onChange={v => onChange(key, v)}
-            >
-              {/* feed column options populated in future */}
-            </ConfigSelect>
-          </div>
-        ))}
+        {variables.map(({ key, label }) => {
+          const isAuto = !!values[key] && columns.includes(values[key]);
+          return (
+            <div key={key} className="flex flex-col gap-1 w-full">
+              <div className="flex items-center justify-between px-1">
+                <FieldLabel>{label}</FieldLabel>
+                {isAuto && <AutoBadge />}
+              </div>
+              <ConfigSelect value={values[key] ?? ''} onChange={v => onChange(key, v)}>
+                <option value="">— select column —</option>
+                {columns.map(col => (
+                  <option key={col} value={col}>{col}</option>
+                ))}
+              </ConfigSelect>
+            </div>
+          );
+        })}
+      </div>
+    </SectionCard>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TEXT BLOCK — Variant (editable text inputs showing current row values)
+// ══════════════════════════════════════════════════════════════════
+
+function ConfigureVariantTextBlock({
+  variables,
+  columnMapping,
+  rowData,
+  onChange,
+}: {
+  variables:     TextVariable[];
+  columnMapping: Record<string, string>;
+  rowData:       Record<string, string>;
+  onChange:      (columnName: string, val: string) => void;
+}) {
+  return (
+    <SectionCard title="Text">
+      <div className="flex flex-col gap-3 w-full">
+        {variables.map(({ key, label }) => {
+          const colName = columnMapping[key] || key;
+          const value   = rowData[colName] ?? '';
+          return (
+            <div key={key} className="flex flex-col gap-1 w-full">
+              <FieldLabel>{label}</FieldLabel>
+              <input
+                value={value}
+                onChange={e => onChange(colName, e.target.value)}
+                className="w-full h-9 py-1.5 px-2 text-[12px] bg-[#f9fafa] border border-[#dddce0] rounded-[4px] text-[#1f1d25] tracking-[0.17px] outline-none focus:border-[#473bab] transition-colors"
+                placeholder={`{${key}}`}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </SectionCard>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MEDIA BLOCK — Feed (column-mapping selects per placeholder)
+// ══════════════════════════════════════════════════════════════════
+
+function ConfigureFeedMediaBlock({
+  variables, values, onChange, columns,
+}: {
+  variables: MediaVariable[];
+  values:    Record<string, string>;
+  onChange:  (id: string, col: string) => void;
+  columns:   string[];
+}) {
+  return (
+    <SectionCard title="Media">
+      <div className="flex flex-col gap-3 w-full">
+        {variables.map(variable => {
+          const isAuto = !!values[variable.id] && columns.includes(values[variable.id]);
+          return (
+            <div key={variable.id} className="flex flex-col gap-1 w-full">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="inline-flex items-center justify-center w-4 h-4 rounded-sm text-white shrink-0"
+                    style={{ backgroundColor: variable.badgeColor, fontSize: '6px', fontWeight: 700 }}
+                  >
+                    {variable.name.slice(0, 3).toUpperCase()}
+                  </span>
+                  <FieldLabel>{variable.name}</FieldLabel>
+                </div>
+                {isAuto && <AutoBadge />}
+              </div>
+              <ConfigSelect value={values[variable.id] ?? ''} onChange={v => onChange(variable.id, v)}>
+                <option value="">— select column —</option>
+                {columns.map(col => (
+                  <option key={col} value={col}>{col}</option>
+                ))}
+              </ConfigSelect>
+            </div>
+          );
+        })}
       </div>
     </SectionCard>
   );
@@ -314,60 +502,296 @@ function ConfigureManualTab() {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// FEED TAB — fully reactive
+// FEED TAB — state persists in the global store across panel switches
 // ══════════════════════════════════════════════════════════════════
 
 function ConfigureFeedTab() {
   const { textVariables, mediaVariables, hasAnyVariable } = useConfigureVariables();
+  const {
+    feedState, updateFeedState, generateVariants, clearVariants,
+    activeVariantId, variants, updateVariantField,
+  } = useDesignWorkspace();
 
-  const [selectedFeed,   setSelectedFeed]   = useState('');
-  const [createMode,     setCreateMode]     = useState<'assets' | 'review'>('assets');
-  const [brandKit,       setBrandKit]       = useState('');
-  const [columnMapping,  setColumnMapping]  = useState<Record<string, string>>({});
-  const [mediaValues,    setMediaValues]    = useState<Record<string, MediaValue>>({});
+  const currentVariant = activeVariantId !== null
+    ? variants.find(v => v.id === activeVariantId) ?? null
+    : null;
 
-  // ── Discard column mappings for text variables removed from the canvas ──
+  const [createMode, setCreateMode] = useState<'assets' | 'review'>('assets');
+  const [brandKit,   setBrandKit]   = useState('');
+
+  // Shorthand aliases
+  const selectedFeed  = feedState.selectedFeedId;
+  const feedColumns   = feedState.columns;
+  const feedRowCount  = feedState.rowCount;
+  const feedStatus    = feedState.status;
+  const columnMapping = feedState.columnMapping;
+  const mediaColMap   = feedState.mediaColMap;
+
+  // ── Clean up stale keys when variables are removed from the canvas ──
   useEffect(() => {
-    setColumnMapping(prev => {
-      const cleaned: Record<string, string> = {};
-      textVariables.forEach(({ key }) => {
-        cleaned[key] = prev[key] ?? '';
-      });
-      return cleaned;
-    });
+    const next: Record<string, string> = {};
+    textVariables.forEach(({ key }) => { next[key] = feedState.columnMapping[key] ?? ''; });
+    if (JSON.stringify(next) !== JSON.stringify(feedState.columnMapping)) {
+      updateFeedState({ columnMapping: next });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textVariables]);
 
-  // ── Discard media values for placeholders removed from the canvas ──
   useEffect(() => {
-    setMediaValues(prev => {
-      const cleaned: Record<string, MediaValue> = {};
-      mediaVariables.forEach(({ id }) => {
-        cleaned[id] = prev[id] ?? { source: '', preview: null };
-      });
-      return cleaned;
-    });
+    const next: Record<string, string> = {};
+    mediaVariables.forEach(({ id }) => { next[id] = feedState.mediaColMap[id] ?? ''; });
+    if (JSON.stringify(next) !== JSON.stringify(feedState.mediaColMap)) {
+      updateFeedState({ mediaColMap: next });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mediaVariables]);
+
+  // ── Fetch columns when feed is selected ────────────────────────
+  // Deps: only selectedFeedId — intentionally excludes feedState.status.
+  // Including status caused a self-cancellation loop: calling
+  // updateFeedState({ status: 'loading' }) changed a dep, React ran the
+  // cleanup (aborting the in-flight fetch), then re-ran the effect which
+  // exited early on the 'loading' guard — leaving status stuck forever.
+  useEffect(() => {
+    const selectedFeedId = feedState.selectedFeedId;
+    if (!selectedFeedId) return;
+
+    // Read status via ref to avoid stale closure without adding it to deps
+    const currentStatus = feedState.status;
+    if (currentStatus === 'loaded' || currentStatus === 'loading') return;
+
+    const feed = PRESET_FEEDS.find(f => f.id === selectedFeedId);
+    if (!feed) return;
+
+    let cancelled      = false;
+    let fetchCompleted = false;
+    updateFeedState({ status: 'loading' });
+
+    // In dev, route through the Vite proxy (/gsheets-proxy → docs.google.com)
+    // to avoid browser CORS restrictions on the initial redirect.
+    const fetchUrl = import.meta.env.DEV
+      ? feed.csvExportUrl.replace('https://docs.google.com', '/gsheets-proxy')
+      : feed.csvExportUrl;
+
+    const controller = new AbortController();
+    const timeout    = setTimeout(() => controller.abort(), 15_000);
+
+    fetch(fetchUrl, { signal: controller.signal })
+      .then(r => {
+        clearTimeout(timeout);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.text();
+      })
+      .then(csv => {
+        if (cancelled) return;
+        const { headers, rows, rowCount } = parseCSV(csv);
+
+        const newMediaMap = { ...feedState.mediaColMap };
+        mediaVariables.forEach(({ id, variant, name }) => {
+          if (!newMediaMap[id]) {
+            newMediaMap[id] = autoMatchColumn(variant, headers) || autoMatchColumn(name, headers);
+          }
+        });
+
+        fetchCompleted = true;
+        updateFeedState({
+          status:      'loaded',
+          columns:     headers,
+          rows,
+          rowCount,
+          mediaColMap: newMediaMap,
+        });
+        // Variant generation is handled by the separate effect below,
+        // which runs with fresh textVariables (no stale closure issue).
+      })
+      .catch(() => {
+        clearTimeout(timeout);
+        if (!cancelled) updateFeedState({ status: 'error' });
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearTimeout(timeout);
+      // Only reset to idle if the fetch was aborted (panel closed mid-fetch).
+      // If it completed successfully, leave status as 'loaded'.
+      if (!fetchCompleted) updateFeedState({ status: 'idle' });
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedState.selectedFeedId]);
+
+  // ── Generate variants whenever feed data or template variables change ──
+  // Separate from the fetch effect so textVariables is always fresh (not a stale closure).
+  // Uses lastGenKey to skip re-generation when the panel remounts with unchanged state
+  // (e.g. switching between Properties and Configure).
+  useEffect(() => {
+    if (feedState.status !== 'loaded') return;
+    if (feedState.rows.length === 0 || feedState.columns.length === 0) return;
+
+    const colMap: Record<string, string> = {};
+    textVariables.forEach(({ key }) => {
+      colMap[key] = feedState.columnMapping[key] || autoMatchColumn(key, feedState.columns);
+    });
+
+    const genKey = JSON.stringify({
+      colMap,
+      rowCount: feedState.rows.length,
+      varKeys:  textVariables.map(v => v.key).sort(),
+    });
+
+    if (genKey === feedState.lastGenKey) return;
+
+    updateFeedState({ lastGenKey: genKey });
+    generateVariants(feedState.rows, colMap);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedState.status, feedState.rows, feedState.columns, feedState.columnMapping, textVariables]);
+
+  // ── Auto-match text variables when columns load or variables change ──
+  useEffect(() => {
+    if (feedColumns.length === 0) return;
+    const next = { ...feedState.columnMapping };
+    let changed = false;
+    textVariables.forEach(({ key }) => {
+      if (!next[key]) { next[key] = autoMatchColumn(key, feedColumns); changed = true; }
+    });
+    if (changed) updateFeedState({ columnMapping: next });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedColumns, textVariables]);
+
+  useEffect(() => {
+    if (feedColumns.length === 0) return;
+    const next = { ...feedState.mediaColMap };
+    let changed = false;
+    mediaVariables.forEach(({ id, variant, name }) => {
+      if (!next[id]) {
+        next[id] = autoMatchColumn(variant, feedColumns) || autoMatchColumn(name, feedColumns);
+        changed = true;
+      }
+    });
+    if (changed) updateFeedState({ mediaColMap: next });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mediaVariables]);
+
+  const activeFeed = PRESET_FEEDS.find(f => f.id === selectedFeed) ?? null;
+
+  function handleSelectFeed(id: string) {
+    clearVariants();
+    if (!id) {
+      updateFeedState({ selectedFeedId: id, status: 'idle', columns: [], rows: [], rowCount: null });
+    } else {
+      updateFeedState({
+        selectedFeedId: id,
+        status:         'idle',
+        columns:        [],
+        rows:           [],
+        rowCount:       null,
+        columnMapping:  {},
+        mediaColMap:    {},
+      });
+    }
+  }
+
+  function handleDisconnect() {
+    clearVariants();
+    updateFeedState({
+      selectedFeedId: '',
+      status:         'idle',
+      columns:        [],
+      rows:           [],
+      rowCount:       null,
+      columnMapping:  {},
+      mediaColMap:    {},
+    });
+  }
 
   return (
     <div className="flex flex-col gap-3 px-4 py-3 w-full overflow-x-hidden">
 
-      {/* Select feed */}
-      <div className="flex flex-col gap-1 w-full">
-        <FieldLabel>Select feed</FieldLabel>
-        <ConfigSelect value={selectedFeed} onChange={setSelectedFeed}>
-          {/* future feed options */}
-        </ConfigSelect>
-      </div>
+      {/* Select feed — hidden once connected to avoid accidental switches */}
+      {feedStatus !== 'loaded' && (
+        <div className="flex flex-col gap-1 w-full">
+          <FieldLabel>Select feed</FieldLabel>
+          <ConfigSelect value={selectedFeed} onChange={handleSelectFeed}>
+            <option value="">— Select a feed —</option>
+            {PRESET_FEEDS.map(f => (
+              <option key={f.id} value={f.id}>{f.label}</option>
+            ))}
+          </ConfigSelect>
+        </div>
+      )}
+
+      {/* Loading */}
+      {feedStatus === 'loading' && (
+        <div className="flex items-center gap-2 w-full bg-[#f5f4ff] border border-[#cac7f5] rounded-lg px-3 py-2.5">
+          <Loader2 size={14} className="text-[#473bab] shrink-0 animate-spin" />
+          <span className="text-[12px] text-[#473bab] tracking-[0.15px]">Connecting to feed…</span>
+        </div>
+      )}
+
+      {/* Error */}
+      {feedStatus === 'error' && (
+        <div className="flex items-start gap-2 w-full bg-[#fff5f5] border border-[#fcc] rounded-lg px-3 py-2.5">
+          <AlertCircle size={14} className="text-[#c0392b] shrink-0 mt-0.5" />
+          <div className="flex flex-col gap-0.5 flex-1">
+            <span className="text-[12px] text-[#c0392b] font-medium tracking-[0.15px]">Could not connect</span>
+            <span className="text-[11px] text-[#686576] leading-[1.4]">
+              Make sure the sheet is shared publicly (View access for anyone with the link).
+            </span>
+          </div>
+          <button
+            onClick={handleDisconnect}
+            className="shrink-0 mt-0.5 text-[11px] text-[#9c99a9] hover:text-[#c0392b] underline underline-offset-2 transition-colors"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Connected */}
+      {feedStatus === 'loaded' && activeFeed && (
+        <div className="flex items-start gap-2.5 w-full bg-[#f0faf4] border border-[#b7e5cc] rounded-lg px-3 py-2.5">
+          {activeFeed.type === 'google-sheets' && (
+            <div className="shrink-0 mt-0.5"><GoogleSheetsIcon size={18} /></div>
+          )}
+          <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 size={11} className="text-[#0F9D58] shrink-0" />
+              <span className="text-[11px] text-[#0b7a43] font-medium tracking-[0.2px]">Feed connected</span>
+            </div>
+            <span className="text-[12px] text-[#1f1d25] font-medium tracking-[0.15px] truncate">
+              {activeFeed.label}
+            </span>
+            <span className="text-[10px] text-[#686576] tracking-[0.15px]">
+              {FEED_TYPE_LABELS[activeFeed.type]}
+              {feedRowCount !== null && ` · ${feedRowCount.toLocaleString()} row${feedRowCount !== 1 ? 's' : ''}`}
+              {feedColumns.length > 0 && ` · ${feedColumns.length} col${feedColumns.length !== 1 ? 's' : ''}`}
+            </span>
+            <button
+              onClick={handleDisconnect}
+              className="mt-1 self-start text-[11px] text-[#9c99a9] hover:text-[#c0392b] underline underline-offset-2 transition-colors leading-none"
+            >
+              Disconnect
+            </button>
+          </div>
+          <a
+            href={activeFeed.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 mt-0.5 text-[#686576] hover:text-[#0F9D58] transition-colors"
+            title="Open sheet"
+          >
+            <ExternalLink size={13} />
+          </a>
+        </div>
+      )}
 
       {/* Create — radio group */}
       <div className="flex flex-col gap-1 w-full">
-        <label className="text-[14px] text-[#1f1d25] tracking-[0.15px] leading-[1.5]">
-          Create
-        </label>
+        <label className="text-[14px] text-[#1f1d25] tracking-[0.15px] leading-[1.5]">Create</label>
         <div className="flex items-center gap-5">
           {([
-            { val: 'assets', label: 'Assets'          },
-            { val: 'review', label: 'Review Document'  },
+            { val: 'assets', label: 'Assets'         },
+            { val: 'review', label: 'Review Document' },
           ] as const).map(({ val, label }) => (
             <label key={val} className="flex items-center gap-2 cursor-pointer select-none">
               <div
@@ -378,14 +802,9 @@ function ConfigureFeedTab() {
                 }}
                 onClick={() => setCreateMode(val)}
               >
-                {createMode === val && (
-                  <div className="w-[8px] h-[8px] rounded-full bg-white" />
-                )}
+                {createMode === val && <div className="w-[8px] h-[8px] rounded-full bg-white" />}
               </div>
-              <span
-                className="text-[14px] text-[#1f1d25] tracking-[0.15px]"
-                onClick={() => setCreateMode(val)}
-              >
+              <span className="text-[14px] text-[#1f1d25] tracking-[0.15px]" onClick={() => setCreateMode(val)}>
                 {label}
               </span>
             </label>
@@ -396,25 +815,40 @@ function ConfigureFeedTab() {
       {/* Brand Kit */}
       <BrandKitSelector value={brandKit} onChange={setBrandKit} />
 
-      {/* Text section — column-mapping selects for each text variable */}
+      {/* Text — column-mapping selects (Master) or editable fields (Variant) */}
       {textVariables.length > 0 && (
-        <ConfigureFeedTextBlock
-          variables={textVariables}
-          values={columnMapping}
-          onChange={(key, val) => setColumnMapping(prev => ({ ...prev, [key]: val }))}
-        />
+        activeVariantId !== null && currentVariant ? (
+          <ConfigureVariantTextBlock
+            variables={textVariables}
+            columnMapping={columnMapping}
+            rowData={currentVariant.rowData}
+            onChange={(colName, val) => updateVariantField(activeVariantId, colName, val)}
+          />
+        ) : (
+          <ConfigureFeedTextBlock
+            variables={textVariables}
+            values={columnMapping}
+            columns={feedColumns}
+            onChange={(key, val) => updateFeedState({ columnMapping: { ...columnMapping, [key]: val } })}
+          />
+        )
       )}
 
-      {/* Media section — same as Manual tab */}
-      {mediaVariables.length > 0 && (
-        <ConfigureMediaBlock
+      {/* Media — column-mapping selects when feed is loaded */}
+      {mediaVariables.length > 0 && feedColumns.length > 0 && (
+        <ConfigureFeedMediaBlock
           variables={mediaVariables}
-          values={mediaValues}
-          onChange={(id, val) => setMediaValues(prev => ({ ...prev, [id]: val }))}
+          values={mediaColMap}
+          columns={feedColumns}
+          onChange={(id, col) => updateFeedState({ mediaColMap: { ...mediaColMap, [id]: col } })}
         />
       )}
 
-      {/* Empty state */}
+      {/* Media — manual picker when no feed columns available */}
+      {mediaVariables.length > 0 && feedColumns.length === 0 && (
+        <ConfigureMediaBlock variables={mediaVariables} values={{}} onChange={() => {}} />
+      )}
+
       {!hasAnyVariable && <ConfigureEmptyState />}
 
     </div>

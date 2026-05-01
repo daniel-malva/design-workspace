@@ -7,8 +7,13 @@ export type LeftRailItem =
 
 export type CanvasElementType =
   | 'text-header' | 'text-subheader' | 'text-body' | 'text-template'
-  | 'placeholder-logo' | 'placeholder-background' | 'placeholder-jellybean'
-  | 'placeholder-media' | 'placeholder-audio'
+  // current placeholder types
+  | 'placeholder-product' | 'placeholder-image'
+  | 'placeholder-background-image' | 'placeholder-background-video'
+  | 'placeholder-primary-logo' | 'placeholder-secondary-logo' | 'placeholder-event-logo'
+  | 'placeholder-audio'
+  // legacy (backward compat)
+  | 'placeholder-logo' | 'placeholder-background' | 'placeholder-jellybean' | 'placeholder-media'
   | 'shape' | 'icon' | 'line' | 'group';
 
 // Kept for backward compatibility with panels not yet migrated
@@ -47,7 +52,12 @@ export interface CanvasElement {
   content?: string;
   shapeVariant?: string;
   iconSrc?: string;
-  placeholderVariant?: 'logo' | 'background' | 'jellybean' | 'media' | 'audio';
+  placeholderVariant?:
+    | 'product' | 'image'
+    | 'background-image' | 'background-video'
+    | 'primary-logo' | 'secondary-logo' | 'event-logo'
+    | 'audio'
+    | 'logo' | 'background' | 'jellybean' | 'media'; // legacy
   lineVariant?: 'solid' | 'dashed' | 'dotted' | 'arrow';
   groupId?: string;
   groupedIds?: string[];
@@ -98,6 +108,7 @@ export interface DesignWorkspaceState {
   isPreviewMode: boolean;
   isTimelineVisible: boolean;
   isTimelineExpanded: boolean;
+  audioPlaceholderInTimeline: boolean;
   canvasPages: CanvasPage[];
   activePageId: string;
   layers: Layer[];
@@ -122,6 +133,15 @@ export interface DesignWorkspaceState {
   future:  HistorySnapshot[];
   /** V59: ID of the group currently highlighted as a drag drop target */
   dragTargetGroupId: string | null;
+  /** Feed configuration — persists across Configure panel open/close cycles */
+  feedState: FeedState;
+  /** Per-row canvas variants generated from the connected feed */
+  variants:        FeedVariant[];
+  /** ID of the active variant, or null when on the master template */
+  activeVariantId: string | null;
+  /** Snapshot of master elements (saved when user first leaves master page) */
+  masterElements:  CanvasElement[];
+  masterLayers:    Layer[];
 
   // ── Canvas actions ───────────────────────────────────────────────
   insertElement: (element: Omit<CanvasElement, 'id'>) => void;
@@ -220,6 +240,7 @@ export interface DesignWorkspaceState {
   setIsPreviewMode: (v: boolean) => void;
   setIsTimelineVisible: (v: boolean) => void;
   setIsTimelineExpanded: (v: boolean) => void;
+  setAudioPlaceholderInTimeline: (v: boolean) => void;
   setActivePageId: (id: string) => void;
   setLayerVisibility: (id: string, visible: boolean) => void;
   setLayerLocked: (id: string, locked: boolean) => void;
@@ -241,6 +262,45 @@ export interface DesignWorkspaceState {
   updateSettings: (patch: Partial<Settings>) => void;
   /** V59: Set the group that should pulse as a drop target (null to clear) */
   setDragTargetGroupId: (id: string | null) => void;
+  updateFeedState: (patch: Partial<FeedState>) => void;
+  generateVariants: (rows: Record<string, string>[], columnMapping: Record<string, string>) => void;
+  switchToPage:    (variantId: string | null) => void;
+  clearVariants:   () => void;
+  updateVariantField: (variantId: string, columnName: string, newValue: string) => void;
+}
+
+// ─── Feed state ───────────────────────────────────────────────────
+export interface FeedState {
+  selectedFeedId: string;
+  columns:        string[];
+  rows:           Record<string, string>[];
+  rowCount:       number | null;
+  status:         'idle' | 'loading' | 'loaded' | 'error';
+  columnMapping:  Record<string, string>;
+  mediaColMap:    Record<string, string>;
+  lastGenKey:     string; // hash of last generateVariants inputs — prevents remount re-generation
+}
+
+const defaultFeedState: FeedState = {
+  selectedFeedId: '',
+  columns:        [],
+  rows:           [],
+  rowCount:       null,
+  status:         'idle',
+  columnMapping:  {},
+  mediaColMap:    {},
+  lastGenKey:     '',
+};
+
+// ─── Feed variant (one per feed row) ──────────────────────────────
+export interface FeedVariant {
+  id:         string;
+  name:       string;
+  rowIndex:   number;
+  rowData:    Record<string, string>;
+  isDetached: boolean;
+  elements:   CanvasElement[];
+  layers:     Layer[];
 }
 
 // ─── Settings model (V56) ─────────────────────────────────────────
@@ -335,11 +395,19 @@ export function defaultLayerName(type: CanvasElementType): string {
     'text-subheader':         'Subheader',
     'text-body':              'Body text',
     'text-template':          'Text',
+    'placeholder-product':          'Product',
+    'placeholder-image':            'Image',
+    'placeholder-background-image': 'Background Image',
+    'placeholder-background-video': 'Background Video',
+    'placeholder-primary-logo':     'Primary Logo',
+    'placeholder-secondary-logo':   'Secondary Logo',
+    'placeholder-event-logo':       'Event Logo',
+    'placeholder-audio':            'Audio',
+    // legacy
     'placeholder-logo':       'Logo',
     'placeholder-background': 'Background',
     'placeholder-jellybean':  'Jellybean',
     'placeholder-media':      'Media',
-    'placeholder-audio':      'Audio',
     'shape':                  'Shape',
     'icon':                   'Icon',
     'line':                   'Line',
@@ -367,6 +435,30 @@ function recalcGroupBounds(
   const maxX = Math.max(...children.map(c => c.x + c.width));
   const maxY = Math.max(...children.map(c => c.y + c.height));
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+// ─── Feed variant helpers ──────────────────────────────────────────
+// Regex: matches {variableName} but not {{nested}}
+const VARIANT_VAR_PATTERN = /\{([^{}]+)\}/g;
+
+function substituteRowInElements(
+  elements:      CanvasElement[],
+  rowData:       Record<string, string>,
+  columnMapping: Record<string, string>,
+): CanvasElement[] {
+  return elements.map(el => {
+    if (!el.content?.includes('{')) return el;
+    const newContent = el.content.replace(VARIANT_VAR_PATTERN, (_, key) => {
+      const trimmedKey = key.trim();
+      const colName = columnMapping[trimmedKey];
+      // Only substitute when the cell value is non-empty — keeps {placeholder}
+      // visible instead of leaving a blank gap when the CSV row has no value
+      // for that column (e.g. Finance columns are empty on Lease rows).
+      const value = colName ? (rowData[colName] ?? '') : '';
+      return value.trim() !== '' ? value : `{${key}}`;
+    });
+    return newContent !== el.content ? { ...el, content: newContent } : el;
+  });
 }
 
 // ─── Default values ───────────────────────────────────────────────
@@ -399,6 +491,7 @@ const defaultContextValue: DesignWorkspaceState = {
   isPreviewMode: false,
   isTimelineVisible: true,
   isTimelineExpanded: false,
+  audioPlaceholderInTimeline: false,
   canvasPages: [{ id: 'page-1', name: 'Canvas 1' }],
   activePageId: 'page-1',
   layers: [],
@@ -441,6 +534,7 @@ const defaultContextValue: DesignWorkspaceState = {
   setIsPreviewMode: noop,
   setIsTimelineVisible: noop,
   setIsTimelineExpanded: noop,
+  setAudioPlaceholderInTimeline: noop,
   setActivePageId: noop,
   setLayerVisibility: noop,
   setLayerLocked: noop,
@@ -462,6 +556,16 @@ const defaultContextValue: DesignWorkspaceState = {
   cancelTextEdit: noop,
   updateSettings: noop,
   setDragTargetGroupId: noop,
+  feedState: defaultFeedState,
+  updateFeedState: noop,
+  variants:         [],
+  activeVariantId:  null,
+  masterElements:   [],
+  masterLayers:     [],
+  generateVariants: noop,
+  switchToPage:     noop,
+  clearVariants:    noop,
+  updateVariantField: noop,
 };
 
 const DesignWorkspaceContext = createContext<DesignWorkspaceState>(defaultContextValue);
@@ -481,6 +585,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   const [isPreviewMode, setIsPreviewModeState] = useState(false);
   const [isTimelineVisible, setIsTimelineVisibleState] = useState(true);
   const [isTimelineExpanded, setIsTimelineExpandedState] = useState(false);
+  const [audioPlaceholderInTimeline, setAudioPlaceholderInTimelineState] = useState(false);
   const [canvasPages] = useState<CanvasPage[]>([{ id: 'page-1', name: 'Canvas 1' }]);
   const [activePageId, setActivePageIdState] = useState('page-1');
   const [layers, setLayers] = useState<Layer[]>([]);
@@ -502,6 +607,18 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
 
   // V59: Group drag target
   const [dragTargetGroupId, setDragTargetGroupIdState] = useState<string | null>(null);
+
+  // Feed configuration (persists across panel open/close)
+  const [feedState, setFeedStateRaw] = useState<FeedState>(defaultFeedState);
+  const updateFeedState = useCallback((patch: Partial<FeedState>) => {
+    setFeedStateRaw(prev => ({ ...prev, ...patch }));
+  }, []);
+
+  // Per-row variant pages
+  const [variants, setVariants]           = useState<FeedVariant[]>([]);
+  const [activeVariantId, setActiveVariantIdState] = useState<string | null>(null);
+  const [masterElements, setMasterElements] = useState<CanvasElement[]>([]);
+  const [masterLayers,   setMasterLayers]   = useState<Layer[]>([]);
 
   // Ref tracks consecutive insert count for +16px offset stagger
   const insertCountRef = useRef(0);
@@ -529,6 +646,19 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   const futureRef = useRef<HistorySnapshot[]>([]);
   futureRef.current = future;
 
+  const activeVariantIdRef = useRef<string | null>(null);
+  activeVariantIdRef.current = activeVariantId;
+  const variantsRef = useRef<FeedVariant[]>([]);
+  variantsRef.current = variants;
+  const masterElementsRef = useRef<CanvasElement[]>([]);
+  masterElementsRef.current = masterElements;
+  const masterLayersRef = useRef<Layer[]>([]);
+  masterLayersRef.current = masterLayers;
+  const feedStateRef = useRef<FeedState>(defaultFeedState);
+  feedStateRef.current = feedState;
+  // Set to true when canvas is mutated while on a variant page
+  const variantDirtyRef = useRef(false);
+
   function typeForId(id: string): string | null {
     return canvasElementsRef.current.find(el => el.id === id)?.type ?? null;
   }
@@ -548,6 +678,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   // takeSnapshot — call at the START of any discrete mutating action.
   // Saves state BEFORE the mutation; clears the redo queue.
   const takeSnapshot = useCallback(() => {
+    if (activeVariantIdRef.current !== null) variantDirtyRef.current = true;
     const snap = buildSnap();
     setHistory(h => [...h, snap].slice(-MAX_HISTORY));
     setFuture([]);
@@ -561,6 +692,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   // commitHistory — call at the END of a continuous operation (drag / resize).
   // Saves state AFTER the mutation (the final position); clears redo queue.
   const commitHistory = useCallback(() => {
+    if (activeVariantIdRef.current !== null) variantDirtyRef.current = true;
     const snap = buildSnap();
     setHistory(h => [...h, snap].slice(-MAX_HISTORY));
     setFuture([]);
@@ -573,35 +705,101 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     const id   = generateId();
     const name = element.name ?? defaultLayerName(element.type);
 
-    const isBackground = element.placeholderVariant === 'background';
+    const W = canvasWidthRef.current;
+    const H = canvasHeightRef.current;
+    const variant  = element.placeholderVariant;
+    const existing = canvasElementsRef.current;
 
-    // Background: fixed full-canvas size at (0,0), no stagger offset
-    // All other elements: apply the consecutive-insert stagger
+    // Helpers — treat legacy and current variant names uniformly
+    const isBackgroundVariant = (v: typeof variant) =>
+      v === 'background' || v === 'background-image' || v === 'background-video';
+    const isProductVariant = (v: typeof variant) => v === 'jellybean' || v === 'product';
+    const isImageVariant   = (v: typeof variant) => v === 'media'     || v === 'image';
+    const isLogoVariant    = (v: typeof variant) =>
+      v === 'logo' || v === 'primary-logo' || v === 'secondary-logo' || v === 'event-logo';
+
+    const isBackground = isBackgroundVariant(variant);
+
     let newEl: CanvasElement;
+
     if (isBackground) {
+      // Background always fills the full canvas
+      newEl = { ...element, id, name, x: 0, y: 0, width: W, height: H };
+
+    } else if (isProductVariant(variant)) {
+      // Primary hero — 65 × 65% centered
+      const w = Math.round(W * 0.65);
+      const h = Math.round(H * 0.65);
       newEl = {
-        ...element,
-        id,
-        name,
-        x:      0,
-        y:      0,
-        width:  canvasWidthRef.current,
-        height: canvasHeightRef.current,
+        ...element, id, name,
+        x: Math.round((W - w) / 2),
+        y: Math.round((H - h) / 2),
+        width: w, height: h,
       };
+
+    } else if (isImageVariant(variant)) {
+      const hasProduct = existing.some(el => isProductVariant(el.placeholderVariant));
+      if (hasProduct) {
+        // Supporting visual — 40% wide, anchored to the right-center
+        const w = Math.round(W * 0.40);
+        const h = Math.round(H * 0.40);
+        newEl = {
+          ...element, id, name,
+          x: Math.round(W * 0.70 - w / 2),
+          y: Math.round(H * 0.50 - h / 2),
+          width: w, height: h,
+        };
+      } else {
+        // Primary hero — 55 × 55% centered
+        const w = Math.round(W * 0.55);
+        const h = Math.round(H * 0.55);
+        newEl = {
+          ...element, id, name,
+          x: Math.round((W - w) / 2),
+          y: Math.round((H - h) / 2),
+          width: w, height: h,
+        };
+      }
+
+    } else if (isLogoVariant(variant)) {
+      // Brand signature — top-left corner, stacks vertically with siblings
+      // Width/height come from the caller (logo variant: square/vertical/horizontal)
+      const margin    = Math.round(W * 0.05);
+      const spacing   = Math.round(H * 0.025);
+      const logoCount = existing.filter(el => isLogoVariant(el.placeholderVariant)).length;
+      const logoH     = element.height > 0 ? element.height : Math.round(H * 0.10);
+      newEl = {
+        ...element, id, name,
+        x: margin,
+        y: margin + logoCount * (logoH + spacing),
+      };
+
     } else {
+      // Non-placeholder elements — keep the consecutive stagger
       const offset = insertCountRef.current * 16;
       insertCountRef.current = (insertCountRef.current + 1) % 10;
       newEl = {
-        ...element,
-        id,
-        name,
+        ...element, id, name,
         x: Math.min(element.x + offset, 500),
         y: Math.min(element.y + offset, 500),
       };
     }
 
     setCanvasElements(prev => {
-      const next = isBackground ? [newEl, ...prev] : [...prev, newEl];
+      let next = isBackground ? [newEl, ...prev] : [...prev, newEl];
+
+      // When a product lands on the canvas, push any existing image to supporting position
+      if (isProductVariant(variant)) {
+        next = next.map(el => {
+          if (el.id !== id && isImageVariant(el.placeholderVariant)) {
+            const w = Math.round(W * 0.40);
+            const h = Math.round(H * 0.40);
+            return { ...el, x: Math.round(W * 0.70 - w / 2), y: Math.round(H * 0.50 - h / 2), width: w, height: h };
+          }
+          return el;
+        });
+      }
+
       // V47: If inserting into a group, recalculate the group's bounding box
       if (newEl.groupId) {
         const bounds = recalcGroupBounds(next, newEl.groupId);
@@ -1081,6 +1279,175 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     [],
   );
 
+  // ── Feed variant actions ───────────────────────────────────────
+  const generateVariants = useCallback((
+    rows: Record<string, string>[],
+    columnMapping: Record<string, string>,
+  ) => {
+    // Use master elements as the source — if we're on a variant, fall back to stored master
+    const isMaster     = activeVariantIdRef.current === null;
+    const sourceEls    = isMaster
+      ? canvasElementsRef.current
+      : (masterElementsRef.current.length > 0 ? masterElementsRef.current : canvasElementsRef.current);
+    const sourceLayers = isMaster
+      ? layersRef.current
+      : (masterLayersRef.current.length  > 0 ? masterLayersRef.current  : layersRef.current);
+
+    setMasterElements([...sourceEls]);
+    setMasterLayers([...sourceLayers]);
+
+    // Reuse existing IDs by row index so activeVariantId stays valid across re-generations
+    // (e.g. when column mapping updates after auto-match fires).
+    const existing      = variantsRef.current;
+    const currVariantId = activeVariantIdRef.current;
+
+    const newVariants: FeedVariant[] = rows.map((rowData, i) => ({
+      id:         existing[i]?.id ?? generateId(),
+      name:       `Row ${i + 1}`,
+      rowIndex:   i,
+      rowData,
+      isDetached: false,
+      elements:   substituteRowInElements(sourceEls, rowData, columnMapping),
+      layers:     [...sourceLayers],
+    }));
+
+    setVariants(newVariants);
+
+    if (!isMaster) {
+      // Stay on current variant if it still exists (same ID reused above).
+      const stillExists = newVariants.find(v => v.id === currVariantId);
+      if (stillExists) {
+        // Update canvas to reflect the new substitution without changing pages.
+        setCanvasElements([...stillExists.elements]);
+        setLayers([...stillExists.layers]);
+      } else {
+        // Row no longer exists (feed shrunk) — fall back to master.
+        setCanvasElements([...sourceEls]);
+        setLayers([...sourceLayers]);
+        setActiveVariantIdState(null);
+      }
+    }
+    variantDirtyRef.current = false;
+    setSelectedElementIds([]);
+    setSelectedElementType(null);
+    setHistory([]);
+    setFuture([]);
+  }, []);
+
+  const switchToPage = useCallback((variantId: string | null) => {
+    const currVariantId = activeVariantIdRef.current;
+    if (currVariantId === variantId) return;
+
+    const currElements = canvasElementsRef.current;
+    const currLayers   = layersRef.current;
+    const colMap       = feedStateRef.current.columnMapping;
+
+    // ── Determine what to load ─────────────────────────────────
+    let loadElements: CanvasElement[];
+    let loadLayers:   Layer[];
+
+    if (variantId === null) {
+      // Going to master
+      loadElements = [...masterElementsRef.current];
+      loadLayers   = [...masterLayersRef.current];
+    } else {
+      const variant = variantsRef.current.find(v => v.id === variantId);
+      if (!variant) return;
+
+      if (!variant.isDetached) {
+        // Re-substitute from the current master
+        const masterEls = currVariantId === null ? currElements : masterElementsRef.current;
+        const masterLs  = currVariantId === null ? currLayers   : masterLayersRef.current;
+        loadElements = substituteRowInElements(masterEls, variant.rowData, colMap);
+        loadLayers   = [...masterLs];
+      } else {
+        loadElements = [...variant.elements];
+        loadLayers   = [...variant.layers];
+      }
+    }
+
+    // ── Save current page ──────────────────────────────────────
+    if (currVariantId === null) {
+      // Leaving master: snapshot + propagate edits to all non-detached variants
+      setMasterElements([...currElements]);
+      setMasterLayers([...currLayers]);
+      setVariants(prev => prev.map(v => {
+        if (v.isDetached) return v;
+        return {
+          ...v,
+          elements: substituteRowInElements(currElements, v.rowData, colMap),
+          layers:   [...currLayers],
+        };
+      }));
+    } else if (variantDirtyRef.current) {
+      // Leaving a modified variant: save back + mark detached
+      setVariants(prev => prev.map(v =>
+        v.id === currVariantId
+          ? { ...v, elements: [...currElements], layers: [...currLayers], isDetached: true }
+          : v
+      ));
+    }
+
+    // ── Load target ────────────────────────────────────────────
+    variantDirtyRef.current = false;
+    setCanvasElements(loadElements);
+    setLayers(loadLayers);
+    setActiveVariantIdState(variantId);
+    setSelectedElementIds([]);
+    setSelectedElementType(null);
+    setEditingGroupId(null);
+    setHistory([]);
+    setFuture([]);
+  }, []);
+
+  const clearVariants = useCallback(() => {
+    // Return to master first if currently on a variant
+    if (activeVariantIdRef.current !== null) {
+      const master  = masterElementsRef.current;
+      const masterL = masterLayersRef.current;
+      if (master.length > 0) {
+        setCanvasElements([...master]);
+        setLayers([...masterL]);
+      }
+      setActiveVariantIdState(null);
+    }
+    setVariants([]);
+    setMasterElements([]);
+    setMasterLayers([]);
+    variantDirtyRef.current = false;
+    setSelectedElementIds([]);
+    setSelectedElementType(null);
+    setHistory([]);
+    setFuture([]);
+  }, []);
+
+  const updateVariantField = useCallback((
+    variantId:  string,
+    columnName: string,
+    newValue:   string,
+  ) => {
+    const colMap    = feedStateRef.current.columnMapping;
+    const masterEls = masterElementsRef.current.length > 0
+      ? masterElementsRef.current
+      : canvasElementsRef.current;
+    const currVariant = variantsRef.current.find(v => v.id === variantId);
+    if (!currVariant) return;
+
+    const updatedRowData  = { ...currVariant.rowData, [columnName]: newValue };
+    const updatedElements = substituteRowInElements(masterEls, updatedRowData, colMap);
+
+    setVariants(prev => prev.map(v =>
+      v.id === variantId
+        ? { ...v, rowData: updatedRowData, elements: updatedElements, isDetached: true }
+        : v
+    ));
+
+    if (activeVariantIdRef.current === variantId) {
+      setCanvasElements(updatedElements);
+      variantDirtyRef.current = true;
+    }
+  }, []);
+
   // ── Text edit actions (V55) ──────────────────────────────────────
   const startTextEdit = useCallback((id: string) => {
     setEditingTextId(id);
@@ -1256,6 +1623,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   const setIsPreviewMode = useCallback((v: boolean) => setIsPreviewModeState(v), []);
   const setIsTimelineVisible = useCallback((v: boolean) => setIsTimelineVisibleState(v), []);
   const setIsTimelineExpanded = useCallback((v: boolean) => setIsTimelineExpandedState(v), []);
+  const setAudioPlaceholderInTimeline = useCallback((v: boolean) => setAudioPlaceholderInTimelineState(v), []);
   const setActivePageId = useCallback((id: string) => setActivePageIdState(id), []);
   const setRightPanelForcedOpen = useCallback((v: boolean) => setRightPanelForcedOpenState(v), []);
   const setActivityPanelOpen = useCallback((v: boolean) => setActivityPanelOpenState(v), []);
@@ -1373,7 +1741,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     selectedElementIds, selectedElementType,
     rightPanelForcedOpen,
     activityPanelOpen, activityPanelTab,
-    isPreviewMode, isTimelineVisible, isTimelineExpanded,
+    isPreviewMode, isTimelineVisible, isTimelineExpanded, audioPlaceholderInTimeline,
     canvasPages, activePageId,
     layers,
     templateName: 'APR Square Banner 600 x 600px',
@@ -1399,7 +1767,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     selectElement, toggleElementSelection, clearSelection, setSelection,
     setSelectedElement,
     setActivePanel, setActiveInsertItem,
-    setIsPreviewMode, setIsTimelineVisible, setIsTimelineExpanded,
+    setIsPreviewMode, setIsTimelineVisible, setIsTimelineExpanded, setAudioPlaceholderInTimeline,
     setActivePageId, setLayerVisibility, setLayerLocked, setLayerName,
     setTextProp, setCanvasOffset, setCanvasScale, setCanvasDimensions, fitCanvasToScreen, setRightPanelForcedOpen,
     setActivityPanelOpen, setActivityPanelTab,
@@ -1413,6 +1781,16 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     settings,
     updateSettings,
     setDragTargetGroupId,
+    feedState,
+    updateFeedState,
+    variants,
+    activeVariantId,
+    masterElements,
+    masterLayers,
+    generateVariants,
+    switchToPage,
+    clearVariants,
+    updateVariantField,
   };
 
   return (

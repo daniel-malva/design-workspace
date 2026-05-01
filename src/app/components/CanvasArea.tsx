@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
 import { CanvasFrame } from './CanvasFrame';
+import { PageStrip } from './PageStrip';
 import { Slider } from './ui/slider';
 import { Separator } from './ui/separator';
 import { UndoRedoButtons } from './UndoRedoButtons';
@@ -18,6 +19,7 @@ import {
   PANEL_GAP,
   TIMELINE_HEIGHT,
   TIMELINE_HEIGHT_EXPANDED,
+  PAGE_STRIP_HEIGHT,
 } from '../constants/layout';
 
 const PADDING = 60; // px — breathing room around canvas on fit-to-screen
@@ -98,13 +100,27 @@ function CanvasMenuOption({ label, onSelect }: { label: string; onSelect: () => 
 // ─── Canvas frame (the white template box) ────────────────────────
 function CanvasFrameWrapper() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const { canvasWidth, canvasHeight } = useDesignWorkspace();
+  const { canvasWidth, canvasHeight, activeVariantId, variants } = useDesignWorkspace();
+
+  const activeVariant  = variants.find(v => v.id === activeVariantId) ?? null;
+  const currentPageName = activeVariant ? activeVariant.name : 'Master Template';
 
   return (
     <div className="relative" style={{ width: canvasWidth, height: canvasHeight + 72 }}>
       {/* Canvas name row — above the frame */}
       <div className="absolute -top-8 left-0 right-0 flex items-center justify-between">
-        <span className="text-[11px] text-[#111111] font-medium">Canvas 1</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-[#111111] font-medium">{currentPageName}</span>
+          {activeVariant?.isDetached && (
+            <span
+              className="text-[9px] font-medium px-1.5 py-0.5 rounded-full leading-none"
+              style={{ color: '#92400e', backgroundColor: '#fef3c7' }}
+            >
+              modified
+            </span>
+          )}
+        </div>
+        {activeVariantId === null && (
         <div className="relative">
           <button
             onClick={e => { e.stopPropagation(); setMenuOpen(o => !o); }}
@@ -120,6 +136,7 @@ function CanvasFrameWrapper() {
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* White canvas frame — all element rendering lives here */}
@@ -140,14 +157,20 @@ function ZoomToolbar({ fitToScreen }: { fitToScreen: () => void }) {
   const {
     isTimelineVisible, isTimelineExpanded,
     canvasScale,
+    variants,
     // ⚠️ activePanel deliberately NOT used — horizontal position never changes
   } = useDesignWorkspace();
 
+  const hasPageStrip = variants.length > 0;
+
   // Vertical only — the one dynamic axis
   const timelineHeight = isTimelineExpanded ? TIMELINE_HEIGHT_EXPANDED : TIMELINE_HEIGHT;
-  const toolbarBottom = isTimelineVisible
+  const baseBottom = isTimelineVisible
     ? PANEL_GAP + timelineHeight + PANEL_GAP   // 8 + height + 8
     : PANEL_GAP;                               // 8px from bottom edge
+  const toolbarBottom = hasPageStrip
+    ? baseBottom + PAGE_STRIP_HEIGHT + PANEL_GAP
+    : baseBottom;
 
   return (
     <div
@@ -502,7 +525,10 @@ export function CanvasArea() {
             <SaveSplitButton />
           </div>
 
-          {/* Zoom toolbar — above the Timeline, centred in the canvas gap */}
+          {/* Page strip — sits above the Timeline, below the ZoomToolbar */}
+          <PageStrip />
+
+          {/* Zoom toolbar — above PageStrip (or Timeline if no variants) */}
           <ZoomToolbar fitToScreen={fitToScreen} />
         </>
       )}
