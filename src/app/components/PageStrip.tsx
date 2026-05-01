@@ -57,7 +57,23 @@ function MiniElement({ el }: { el: CanvasElement }) {
     return <div style={{ ...base, backgroundColor: el.style?.color ?? '#111', opacity: el.style?.opacity ?? 1 }} />;
   }
 
-  // Placeholder types
+  // Placeholder types — show resolved image when available, otherwise colored block
+  if (el.src) {
+    const isBg = el.placeholderVariant === 'background'
+      || el.placeholderVariant === 'background-image'
+      || el.placeholderVariant === 'background-video';
+    return (
+      <div style={{ ...base, opacity: el.style?.opacity ?? 1, overflow: 'hidden' }}>
+        <img
+          src={el.src}
+          alt=""
+          draggable={false}
+          style={{ width: '100%', height: '100%', objectFit: isBg ? 'cover' : 'contain', display: 'block' }}
+        />
+      </div>
+    );
+  }
+
   const COLORS: Record<string, string> = {
     'placeholder-background-image': '#c8d8e8',
     'placeholder-background-video': '#c8cce8',

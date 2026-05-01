@@ -50,6 +50,7 @@ export interface CanvasElement {
   height: number;
   name?: string;           // ← V40: editable layer name
   content?: string;
+  src?: string;            // resolved image URL injected during feed substitution
   shapeVariant?: string;
   iconSrc?: string;
   placeholderVariant?:
@@ -445,19 +446,33 @@ function substituteRowInElements(
   elements:      CanvasElement[],
   rowData:       Record<string, string>,
   columnMapping: Record<string, string>,
+  mediaColMap:   Record<string, string> = {},
 ): CanvasElement[] {
   return elements.map(el => {
-    if (!el.content?.includes('{')) return el;
-    const newContent = el.content.replace(VARIANT_VAR_PATTERN, (_, key) => {
-      const trimmedKey = key.trim();
-      const colName = columnMapping[trimmedKey];
-      // Only substitute when the cell value is non-empty — keeps {placeholder}
-      // visible instead of leaving a blank gap when the CSV row has no value
-      // for that column (e.g. Finance columns are empty on Lease rows).
-      const value = colName ? (rowData[colName] ?? '') : '';
-      return value.trim() !== '' ? value : `{${key}}`;
-    });
-    return newContent !== el.content ? { ...el, content: newContent } : el;
+    let result: CanvasElement = el;
+
+    // Text variable substitution
+    if (el.content?.includes('{')) {
+      const newContent = el.content.replace(VARIANT_VAR_PATTERN, (_, key) => {
+        const trimmedKey = key.trim();
+        const colName = columnMapping[trimmedKey];
+        // Only substitute when the cell value is non-empty — keeps {placeholder}
+        // visible instead of leaving a blank gap when the CSV row has no value.
+        const value = colName ? (rowData[colName] ?? '') : '';
+        return value.trim() !== '' ? value : `{${key}}`;
+      });
+      if (newContent !== el.content) result = { ...result, content: newContent };
+    }
+
+    // Media placeholder substitution — inject resolved image URL into el.src
+    if (el.type.startsWith('placeholder-')) {
+      const colName = mediaColMap[el.id];
+      const url     = colName ? (rowData[colName] ?? '').trim() : '';
+      const newSrc  = url || undefined;
+      if (newSrc !== result.src) result = { ...result, src: newSrc };
+    }
+
+    return result;
   });
 }
 
@@ -1301,13 +1316,14 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     const existing      = variantsRef.current;
     const currVariantId = activeVariantIdRef.current;
 
+    const mediaColMap = feedStateRef.current.mediaColMap;
     const newVariants: FeedVariant[] = rows.map((rowData, i) => ({
       id:         existing[i]?.id ?? generateId(),
       name:       `Row ${i + 1}`,
       rowIndex:   i,
       rowData,
       isDetached: false,
-      elements:   substituteRowInElements(sourceEls, rowData, columnMapping),
+      elements:   substituteRowInElements(sourceEls, rowData, columnMapping, mediaColMap),
       layers:     [...sourceLayers],
     }));
 
@@ -1341,6 +1357,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     const currElements = canvasElementsRef.current;
     const currLayers   = layersRef.current;
     const colMap       = feedStateRef.current.columnMapping;
+    const mediaColMap  = feedStateRef.current.mediaColMap;
 
     // ── Determine what to load ─────────────────────────────────
     let loadElements: CanvasElement[];
@@ -1358,7 +1375,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
         // Re-substitute from the current master
         const masterEls = currVariantId === null ? currElements : masterElementsRef.current;
         const masterLs  = currVariantId === null ? currLayers   : masterLayersRef.current;
-        loadElements = substituteRowInElements(masterEls, variant.rowData, colMap);
+        loadElements = substituteRowInElements(masterEls, variant.rowData, colMap, mediaColMap);
         loadLayers   = [...masterLs];
       } else {
         loadElements = [...variant.elements];
@@ -1375,7 +1392,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
         if (v.isDetached) return v;
         return {
           ...v,
-          elements: substituteRowInElements(currElements, v.rowData, colMap),
+          elements: substituteRowInElements(currElements, v.rowData, colMap, mediaColMap),
           layers:   [...currLayers],
         };
       }));
@@ -1426,15 +1443,16 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     columnName: string,
     newValue:   string,
   ) => {
-    const colMap    = feedStateRef.current.columnMapping;
-    const masterEls = masterElementsRef.current.length > 0
+    const colMap     = feedStateRef.current.columnMapping;
+    const mediaColMap = feedStateRef.current.mediaColMap;
+    const masterEls  = masterElementsRef.current.length > 0
       ? masterElementsRef.current
       : canvasElementsRef.current;
     const currVariant = variantsRef.current.find(v => v.id === variantId);
     if (!currVariant) return;
 
     const updatedRowData  = { ...currVariant.rowData, [columnName]: newValue };
-    const updatedElements = substituteRowInElements(masterEls, updatedRowData, colMap);
+    const updatedElements = substituteRowInElements(masterEls, updatedRowData, colMap, mediaColMap);
 
     setVariants(prev => prev.map(v =>
       v.id === variantId

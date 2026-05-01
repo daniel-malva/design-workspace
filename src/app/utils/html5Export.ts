@@ -84,6 +84,23 @@ function buildPlaceholderHtml(el: CanvasElement): string {
     `data-dw-placeholder="${esc(variant)}"`,
   ].join(' ');
 
+  // When a feed image has been resolved, render the actual image
+  if (el.src) {
+    const objFit = isBg ? 'cover' : 'contain';
+    const outerStyle = [
+      'position:absolute',
+      `left:${el.x}px`,
+      `top:${el.y}px`,
+      `width:${el.width}px`,
+      `height:${el.height}px`,
+      `opacity:${opacity}`,
+      'overflow:hidden',
+      `border-radius:${radius}px`,
+    ].join(';');
+    const imgStyle = `width:100%;height:100%;object-fit:${objFit};display:block`;
+    return `<div style="${outerStyle}" ${dataAttrs}><img src="${esc(el.src)}" alt="" style="${imgStyle}" /></div>`;
+  }
+
   const outerStyle = [
     'position:absolute',
     `left:${el.x}px`,

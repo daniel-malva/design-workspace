@@ -76,6 +76,24 @@ function autoMatchColumn(hint: string, columns: string[]): string {
   return columns.find(c => norm(c) === h) ?? '';
 }
 
+// Extra column hints per placeholder variant — tried after the primary match fails.
+// Keeps domain-specific knowledge out of the generic fuzzy matcher.
+const MEDIA_COLUMN_ALIASES: Record<string, string[]> = {
+  'product':  ['jellybean', 'jelly bean', 'jelly_bean', 'jellybeans'],
+};
+
+// Try variant, then layer name, then domain aliases.
+function autoMatchMedia(variant: string, name: string, columns: string[]): string {
+  return (
+    autoMatchColumn(variant, columns) ||
+    autoMatchColumn(name, columns) ||
+    (MEDIA_COLUMN_ALIASES[variant] ?? []).reduce<string>(
+      (found, alias) => found || autoMatchColumn(alias, columns),
+      '',
+    )
+  );
+}
+
 // ── Google Sheets icon (inline SVG — no external dependency) ──────
 function GoogleSheetsIcon({ size = 16 }: { size?: number }) {
   return (
@@ -589,7 +607,7 @@ function ConfigureFeedTab() {
         const newMediaMap = { ...feedState.mediaColMap };
         mediaVariables.forEach(({ id, variant, name }) => {
           if (!newMediaMap[id]) {
-            newMediaMap[id] = autoMatchColumn(variant, headers) || autoMatchColumn(name, headers);
+            newMediaMap[id] = autoMatchMedia(variant, name, headers);
           }
         });
 
@@ -664,7 +682,7 @@ function ConfigureFeedTab() {
     let changed = false;
     mediaVariables.forEach(({ id, variant, name }) => {
       if (!next[id]) {
-        next[id] = autoMatchColumn(variant, feedColumns) || autoMatchColumn(name, feedColumns);
+        next[id] = autoMatchMedia(variant, name, feedColumns);
         changed = true;
       }
     });

@@ -70,7 +70,22 @@ function PlaceholderDashedBorder({ color, radius }: { color: string; radius: num
   );
 }
 
-function PlaceholderElement({ variant, width, height }: { variant: string; width: number; height: number }) {
+function PlaceholderElement({ variant, width, height, src }: { variant: string; width: number; height: number; src?: string }) {
+  // When a feed image URL has been resolved, render it directly
+  if (src) {
+    const isBg = variant === 'background' || variant === 'background-image' || variant === 'background-video';
+    return (
+      <div className="w-full h-full relative overflow-hidden" style={{ borderRadius: isBg ? 0 : 4 }}>
+        <img
+          src={src}
+          alt=""
+          draggable={false}
+          className="w-full h-full"
+          style={{ objectFit: isBg ? 'cover' : 'contain', display: 'block' }}
+        />
+      </div>
+    );
+  }
   const cfg        = PLACEHOLDER_CFG[variant] ?? PLACEHOLDER_CFG['media'];
   const isBg       = variant === 'background' || variant === 'background-image' || variant === 'background-video';
   const minDim     = Math.min(width, height);
@@ -263,6 +278,7 @@ function ElementContent({ element }: { element: CanvasElement }) {
           variant={element.placeholderVariant ?? 'media'}
           width={element.width}
           height={element.height}
+          src={element.src}
         />
       );
 
