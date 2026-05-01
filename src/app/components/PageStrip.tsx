@@ -64,7 +64,7 @@ function MiniElement({ el }: { el: CanvasElement }) {
     const isProduct = v === 'product' || v === 'jellybean' || v === 'image' || v === 'media';
     const objFit    = isLogo ? 'contain' : 'cover';
     const mask      = isProduct
-      ? 'linear-gradient(to bottom, black 68%, rgba(0,0,0,0.6) 84%, transparent 100%)'
+      ? 'radial-gradient(ellipse 95% 90% at 50% 50%, black 70%, rgba(0,0,0,0.7) 82%, rgba(0,0,0,0.15) 93%, transparent 100%)'
       : undefined;
     return (
       <div style={{ ...base, opacity: el.style?.opacity ?? 1, overflow: 'hidden' }}>
