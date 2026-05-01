@@ -59,16 +59,16 @@ function MiniElement({ el }: { el: CanvasElement }) {
 
   // Placeholder types — show resolved image when available, otherwise colored block
   if (el.src) {
-    const isBg = el.placeholderVariant === 'background'
-      || el.placeholderVariant === 'background-image'
-      || el.placeholderVariant === 'background-video';
+    const v      = el.placeholderVariant ?? '';
+    const isLogo = v === 'logo' || v === 'primary-logo' || v === 'secondary-logo' || v === 'event-logo';
+    const objFit = isLogo ? 'contain' : 'cover';
     return (
       <div style={{ ...base, opacity: el.style?.opacity ?? 1, overflow: 'hidden' }}>
         <img
           src={el.src}
           alt=""
           draggable={false}
-          style={{ width: '100%', height: '100%', objectFit: isBg ? 'cover' : 'contain', display: 'block' }}
+          style={{ width: '100%', height: '100%', objectFit: objFit, display: 'block' }}
         />
       </div>
     );

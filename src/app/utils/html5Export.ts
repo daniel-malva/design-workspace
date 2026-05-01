@@ -86,7 +86,8 @@ function buildPlaceholderHtml(el: CanvasElement): string {
 
   // When a feed image has been resolved, render the actual image
   if (el.src) {
-    const objFit = isBg ? 'cover' : 'contain';
+    const isLogo = variant === 'logo' || variant === 'primary-logo' || variant === 'secondary-logo' || variant === 'event-logo';
+    const objFit = isLogo ? 'contain' : 'cover';
     const outerStyle = [
       'position:absolute',
       `left:${el.x}px`,

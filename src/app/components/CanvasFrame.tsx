@@ -73,7 +73,11 @@ function PlaceholderDashedBorder({ color, radius }: { color: string; radius: num
 function PlaceholderElement({ variant, width, height, src }: { variant: string; width: number; height: number; src?: string }) {
   // When a feed image URL has been resolved, render it directly
   if (src) {
-    const isBg = variant === 'background' || variant === 'background-image' || variant === 'background-video';
+    const isBg   = variant === 'background' || variant === 'background-image' || variant === 'background-video';
+    const isLogo = variant === 'logo' || variant === 'primary-logo' || variant === 'secondary-logo' || variant === 'event-logo';
+    // Logos: contain (show full mark, no crop).
+    // Everything else (product, image, jellybean, media, backgrounds): cover (fill max area).
+    const objFit = isLogo ? 'contain' : 'cover';
     return (
       <div className="w-full h-full relative overflow-hidden" style={{ borderRadius: isBg ? 0 : 4 }}>
         <img
@@ -81,7 +85,7 @@ function PlaceholderElement({ variant, width, height, src }: { variant: string; 
           alt=""
           draggable={false}
           className="w-full h-full"
-          style={{ objectFit: isBg ? 'cover' : 'contain', display: 'block' }}
+          style={{ objectFit: objFit, display: 'block' }}
         />
       </div>
     );
