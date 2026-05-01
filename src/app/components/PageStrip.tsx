@@ -59,16 +59,23 @@ function MiniElement({ el }: { el: CanvasElement }) {
 
   // Placeholder types — show resolved image when available, otherwise colored block
   if (el.src) {
-    const v      = el.placeholderVariant ?? '';
-    const isLogo = v === 'logo' || v === 'primary-logo' || v === 'secondary-logo' || v === 'event-logo';
-    const objFit = isLogo ? 'contain' : 'cover';
+    const v         = el.placeholderVariant ?? '';
+    const isLogo    = v === 'logo' || v === 'primary-logo' || v === 'secondary-logo' || v === 'event-logo';
+    const isProduct = v === 'product' || v === 'jellybean' || v === 'image' || v === 'media';
+    const objFit    = isLogo ? 'contain' : 'cover';
+    const mask      = isProduct
+      ? 'radial-gradient(ellipse 88% 78% at 50% 44%, black 52%, rgba(0,0,0,0.85) 65%, rgba(0,0,0,0.3) 82%, transparent 100%)'
+      : undefined;
     return (
       <div style={{ ...base, opacity: el.style?.opacity ?? 1, overflow: 'hidden' }}>
         <img
           src={el.src}
           alt=""
           draggable={false}
-          style={{ width: '100%', height: '100%', objectFit: objFit, display: 'block' }}
+          style={{
+            width: '100%', height: '100%', objectFit: objFit, display: 'block',
+            WebkitMaskImage: mask, maskImage: mask,
+          }}
         />
       </div>
     );

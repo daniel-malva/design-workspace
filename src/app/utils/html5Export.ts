@@ -86,8 +86,12 @@ function buildPlaceholderHtml(el: CanvasElement): string {
 
   // When a feed image has been resolved, render the actual image
   if (el.src) {
-    const isLogo = variant === 'logo' || variant === 'primary-logo' || variant === 'secondary-logo' || variant === 'event-logo';
-    const objFit = isLogo ? 'contain' : 'cover';
+    const isLogo    = variant === 'logo' || variant === 'primary-logo' || variant === 'secondary-logo' || variant === 'event-logo';
+    const isProduct = variant === 'product' || variant === 'jellybean' || variant === 'image' || variant === 'media';
+    const objFit    = isLogo ? 'contain' : 'cover';
+    const mask      = isProduct
+      ? 'radial-gradient(ellipse 88% 78% at 50% 44%, black 52%, rgba(0,0,0,0.85) 65%, rgba(0,0,0,0.3) 82%, transparent 100%)'
+      : '';
     const outerStyle = [
       'position:absolute',
       `left:${el.x}px`,
@@ -98,7 +102,10 @@ function buildPlaceholderHtml(el: CanvasElement): string {
       'overflow:hidden',
       `border-radius:${radius}px`,
     ].join(';');
-    const imgStyle = `width:100%;height:100%;object-fit:${objFit};display:block`;
+    const imgStyle = [
+      'width:100%', 'height:100%', `object-fit:${objFit}`, 'display:block',
+      ...(mask ? [`-webkit-mask-image:${mask}`, `mask-image:${mask}`] : []),
+    ].join(';');
     return `<div style="${outerStyle}" ${dataAttrs}><img src="${esc(el.src)}" alt="" style="${imgStyle}" /></div>`;
   }
 

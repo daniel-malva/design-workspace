@@ -73,11 +73,18 @@ function PlaceholderDashedBorder({ color, radius }: { color: string; radius: num
 function PlaceholderElement({ variant, width, height, src }: { variant: string; width: number; height: number; src?: string }) {
   // When a feed image URL has been resolved, render it directly
   if (src) {
-    const isBg   = variant === 'background' || variant === 'background-image' || variant === 'background-video';
-    const isLogo = variant === 'logo' || variant === 'primary-logo' || variant === 'secondary-logo' || variant === 'event-logo';
-    // Logos: contain (show full mark, no crop).
-    // Everything else (product, image, jellybean, media, backgrounds): cover (fill max area).
-    const objFit = isLogo ? 'contain' : 'cover';
+    const isBg      = variant === 'background' || variant === 'background-image' || variant === 'background-video';
+    const isLogo    = variant === 'logo' || variant === 'primary-logo' || variant === 'secondary-logo' || variant === 'event-logo';
+    const isProduct = variant === 'product' || variant === 'jellybean' || variant === 'image' || variant === 'media';
+    const objFit    = isLogo ? 'contain' : 'cover';
+
+    // Product/jellybean shots typically have a shadow below the car that gets
+    // hard-clipped by overflow:hidden. A radial mask fades the edges softly so
+    // the shadow dissolves naturally rather than cutting off abruptly.
+    const maskImage = isProduct
+      ? 'radial-gradient(ellipse 88% 78% at 50% 44%, black 52%, rgba(0,0,0,0.85) 65%, rgba(0,0,0,0.3) 82%, transparent 100%)'
+      : undefined;
+
     return (
       <div className="w-full h-full relative overflow-hidden" style={{ borderRadius: isBg ? 0 : 4 }}>
         <img
@@ -85,7 +92,12 @@ function PlaceholderElement({ variant, width, height, src }: { variant: string; 
           alt=""
           draggable={false}
           className="w-full h-full"
-          style={{ objectFit: objFit, display: 'block' }}
+          style={{
+            objectFit: objFit,
+            display: 'block',
+            WebkitMaskImage: maskImage,
+            maskImage,
+          }}
         />
       </div>
     );
