@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/gsheets-proxy/:path*",
+      "destination": "https://docs.google.com/:path*"
+    }
+  ]
+}
