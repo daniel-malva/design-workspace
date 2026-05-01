@@ -82,7 +82,7 @@ function PlaceholderElement({ variant, width, height, src }: { variant: string; 
     // hard-clipped by overflow:hidden. A radial mask fades the edges softly so
     // the shadow dissolves naturally rather than cutting off abruptly.
     const maskImage = isProduct
-      ? 'radial-gradient(ellipse 88% 78% at 50% 44%, black 52%, rgba(0,0,0,0.85) 65%, rgba(0,0,0,0.3) 82%, transparent 100%)'
+      ? 'linear-gradient(to bottom, black 68%, rgba(0,0,0,0.6) 84%, transparent 100%)'
       : undefined;
 
     return (
