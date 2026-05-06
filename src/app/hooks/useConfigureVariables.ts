@@ -117,7 +117,7 @@ export function useConfigureVariables() {
         id:         el.id,
         name:       el.name ?? defaultLayerName(el.type),
         type:       el.type,
-        variant:    el.placeholderVariant ?? '',
+        variant:    el.placeholderVariant ?? el.type.replace(/^placeholder-/, ''),
         badgeColor: PLACEHOLDER_BADGE_COLORS[el.type] ?? '#6B7280',
       }));
 

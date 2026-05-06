@@ -30,14 +30,24 @@ export function Timeline() {
   const [zoomLevel, setZoomLevel]       = useState(40);
   const [audioFlash, setAudioFlash]     = useState(false);
 
-  const prevAudioRef = useRef(false);
+  const prevAudioRef    = useRef(false);
+  const layerNamesRef   = useRef<HTMLDivElement>(null);
+  const trackLanesRef   = useRef<HTMLDivElement>(null);
 
-  // Pulse the timeline ring once (3 beats) whenever audio is first added
+  // Pulse the timeline ring once (3 beats) whenever audio is first added,
+  // and scroll both columns to the bottom so the new row is visible.
   useEffect(() => {
     if (audioPlaceholderInTimeline && !prevAudioRef.current) {
       setAudioFlash(true);
       const t = setTimeout(() => setAudioFlash(false), 1800);
-      return () => clearTimeout(t);
+
+      // Wait one frame so React has rendered the audio row before scrolling
+      const raf = requestAnimationFrame(() => {
+        layerNamesRef.current?.scrollTo({ top: layerNamesRef.current.scrollHeight, behavior: 'smooth' });
+        trackLanesRef.current?.scrollTo({ top: trackLanesRef.current.scrollHeight, behavior: 'smooth' });
+      });
+
+      return () => { clearTimeout(t); cancelAnimationFrame(raf); };
     }
     prevAudioRef.current = audioPlaceholderInTimeline;
   }, [audioPlaceholderInTimeline]);
@@ -185,7 +195,7 @@ export function Timeline() {
       {isTimelineExpanded && (
         <div className="flex flex-1 overflow-hidden border-t border-[#E2E2E2]">
           {/* Layer names column */}
-          <div className="w-44 shrink-0 border-r border-[#E2E2E2] overflow-y-auto flex flex-col">
+          <div ref={layerNamesRef} className="w-44 shrink-0 border-r border-[#E2E2E2] overflow-y-auto flex flex-col">
             {layers.map(layer => (
               <div
                 key={layer.id}
@@ -219,7 +229,7 @@ export function Timeline() {
           </div>
 
           {/* Track lanes */}
-          <div className="flex-1 relative overflow-x-auto flex flex-col">
+          <div ref={trackLanesRef} className="flex-1 relative overflow-x-auto overflow-y-auto flex flex-col">
             {/* Ruler */}
             <div className="flex h-5 border-b border-[#E2E2E2] bg-[#fafafa] shrink-0">
               {Array.from({ length: 11 }).map((_, i) => (

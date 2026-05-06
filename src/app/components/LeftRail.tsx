@@ -21,7 +21,7 @@ const navItems: NavItem[] = [
 ];
 
 export function LeftRail() {
-  const { activePanel, setActivePanel, isTimelineVisible, setIsTimelineVisible } = useDesignWorkspace();
+  const { activePanel, setActivePanel, selectElement, isTimelineVisible, setIsTimelineVisible } = useDesignWorkspace();
 
   return (
     <div className="flex flex-col items-center bg-[#E8E8E8] w-[64px] h-full py-2 shrink-0 z-30">
@@ -45,7 +45,14 @@ export function LeftRail() {
           return (
             <button
               key={item.id}
-              onClick={() => setActivePanel(item.id)}
+              onClick={() => {
+                setActivePanel(item.id);
+                // Configure and Settings live in the right panel — clear any canvas
+                // selection so they are never masked by the Properties panel.
+                if (item.id === 'configure' || item.id === 'settings') {
+                  selectElement(null);
+                }
+              }}
               className={`flex flex-col items-center gap-1 py-2 w-full rounded-xl transition-colors ${
                 isActive ? 'bg-[rgba(91,78,255,0.12)]' : 'hover:bg-[#DCDCDC]'
               }`}

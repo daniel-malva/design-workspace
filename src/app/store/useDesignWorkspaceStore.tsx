@@ -267,7 +267,8 @@ export interface DesignWorkspaceState {
   generateVariants: (rows: Record<string, string>[], columnMapping: Record<string, string>) => void;
   switchToPage:    (variantId: string | null) => void;
   clearVariants:   () => void;
-  updateVariantField: (variantId: string, columnName: string, newValue: string) => void;
+  updateVariantField:   (variantId: string, columnName: string, newValue: string) => void;
+  setVariantElementSrc: (variantId: string, elementId: string, src: string) => void;
 }
 
 // ─── Feed state ───────────────────────────────────────────────────
@@ -442,6 +443,29 @@ function recalcGroupBounds(
 // Regex: matches {variableName} but not {{nested}}
 const VARIANT_VAR_PATTERN = /\{([^{}]+)\}/g;
 
+// ── URL resolver — converts share/view links to embeddable direct URLs ──────
+function resolveMediaUrl(raw: string): string {
+  const url = raw.trim();
+  if (!url) return '';
+
+  // Google Drive share/view links → lh3 CDN (cross-origin safe, no auth redirect)
+  // Patterns handled:
+  //   https://drive.google.com/file/d/{ID}/view?...
+  //   https://drive.google.com/file/d/{ID}/preview?...
+  //   https://drive.google.com/open?id={ID}
+  //   https://drive.google.com/uc?id={ID}&...
+  const driveFileMatch = url.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
+  if (driveFileMatch) {
+    return `https://lh3.googleusercontent.com/d/${driveFileMatch[1]}`;
+  }
+  const driveOpenMatch = url.match(/drive\.google\.com\/(?:open|uc)\?.*[?&]id=([^&]+)/);
+  if (driveOpenMatch) {
+    return `https://lh3.googleusercontent.com/d/${driveOpenMatch[1]}`;
+  }
+
+  return url;
+}
+
 function substituteRowInElements(
   elements:      CanvasElement[],
   rowData:       Record<string, string>,
@@ -467,8 +491,8 @@ function substituteRowInElements(
     // Media placeholder substitution — inject resolved image URL into el.src
     if (el.type.startsWith('placeholder-')) {
       const colName = mediaColMap[el.id];
-      const url     = colName ? (rowData[colName] ?? '').trim() : '';
-      const newSrc  = url || undefined;
+      const raw     = colName ? (rowData[colName] ?? '').trim() : '';
+      const newSrc  = raw ? resolveMediaUrl(raw) : undefined;
       if (newSrc !== result.src) result = { ...result, src: newSrc };
     }
 
@@ -580,7 +604,8 @@ const defaultContextValue: DesignWorkspaceState = {
   generateVariants: noop,
   switchToPage:     noop,
   clearVariants:    noop,
-  updateVariantField: noop,
+  updateVariantField:   noop,
+  setVariantElementSrc: noop,
 };
 
 const DesignWorkspaceContext = createContext<DesignWorkspaceState>(defaultContextValue);
@@ -1466,6 +1491,27 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     }
   }, []);
 
+  const setVariantElementSrc = useCallback((
+    variantId: string,
+    elementId: string,
+    src:       string,
+  ) => {
+    const newSrc = src.trim() ? resolveMediaUrl(src) : undefined;
+    setVariants(prev => prev.map(v => {
+      if (v.id !== variantId) return v;
+      const updatedElements = v.elements.map(el =>
+        el.id === elementId ? { ...el, src: newSrc } : el
+      );
+      return { ...v, elements: updatedElements, isDetached: true };
+    }));
+    if (activeVariantIdRef.current === variantId) {
+      setCanvasElements(prev => prev.map(el =>
+        el.id === elementId ? { ...el, src: newSrc } : el
+      ));
+      variantDirtyRef.current = true;
+    }
+  }, []);
+
   // ── Text edit actions (V55) ──────────────────────────────────────
   const startTextEdit = useCallback((id: string) => {
     setEditingTextId(id);
@@ -1809,6 +1855,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     switchToPage,
     clearVariants,
     updateVariantField,
+    setVariantElementSrc,
   };
 
   return (

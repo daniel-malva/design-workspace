@@ -52,8 +52,7 @@ function parseCSV(csv: string): { headers: string[]; rows: Record<string, string
   }
 
   const headers   = parseLine(lines[0]).filter(Boolean);
-  const MAX_ROWS  = 50;
-  const dataLines = lines.slice(1, MAX_ROWS + 1);
+  const dataLines = lines.slice(1);
 
   const rows: Record<string, string>[] = dataLines.map(line => {
     const values = parseLine(line);
@@ -79,7 +78,10 @@ function autoMatchColumn(hint: string, columns: string[]): string {
 // Extra column hints per placeholder variant — tried after the primary match fails.
 // Keeps domain-specific knowledge out of the generic fuzzy matcher.
 const MEDIA_COLUMN_ALIASES: Record<string, string[]> = {
-  'product':  ['jellybean', 'jelly bean', 'jelly_bean', 'jellybeans'],
+  'product':          ['jellybean', 'jelly bean', 'jelly_bean', 'jellybeans'],
+  'background-image': ['background', 'bg', 'background image', 'background_image', 'bg image'],
+  'background-video': ['background', 'bg', 'background video', 'background_video', 'bg video'],
+  'background':       ['background', 'bg', 'background image', 'background_image'],
 };
 
 // Try variant, then layer name, then domain aliases.
@@ -277,6 +279,72 @@ function ConfigureVariantTextBlock({
                 className="w-full h-9 py-1.5 px-2 text-[12px] bg-[#f9fafa] border border-[#dddce0] rounded-[4px] text-[#1f1d25] tracking-[0.17px] outline-none focus:border-[#473bab] transition-colors"
                 placeholder={`{${key}}`}
               />
+            </div>
+          );
+        })}
+      </div>
+    </SectionCard>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MEDIA BLOCK — Variant (URL input per placeholder, overrides feed)
+// ══════════════════════════════════════════════════════════════════
+
+function ConfigureVariantMediaBlock({
+  variables,
+  elements,
+  onChangeSrc,
+}: {
+  variables:   MediaVariable[];
+  elements:    Array<{ id: string; src?: string }>;
+  onChangeSrc: (elementId: string, src: string) => void;
+}) {
+  return (
+    <SectionCard title="Media">
+      <div className="flex flex-col gap-4 w-full">
+        {variables.map(variable => {
+          const el  = elements.find(e => e.id === variable.id);
+          const src = el?.src ?? '';
+          return (
+            <div key={variable.id} className="flex flex-col gap-2 w-full">
+              {/* Header row */}
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="inline-flex items-center justify-center w-4 h-4 rounded-sm text-white shrink-0"
+                  style={{ backgroundColor: variable.badgeColor, fontSize: '6px', fontWeight: 700 }}
+                >
+                  {variable.name.slice(0, 3).toUpperCase()}
+                </span>
+                <FieldLabel>{variable.name}</FieldLabel>
+              </div>
+
+              {/* Preview */}
+              {src && (
+                <div className="w-full h-16 rounded overflow-hidden bg-[#f0f0f0] border border-[#dddce0]">
+                  <img src={src} alt="" className="w-full h-full object-cover" />
+                </div>
+              )}
+
+              {/* URL input */}
+              <div className="flex items-center gap-1 w-full">
+                <input
+                  type="url"
+                  value={src}
+                  onChange={e => onChangeSrc(variable.id, e.target.value)}
+                  placeholder="Paste image URL…"
+                  className="flex-1 h-9 py-1.5 px-2 text-[12px] bg-[#f9fafa] border border-[#dddce0] rounded-[4px] text-[#1f1d25] tracking-[0.17px] outline-none focus:border-[#473bab] transition-colors min-w-0"
+                />
+                {src && (
+                  <button
+                    onClick={() => onChangeSrc(variable.id, '')}
+                    className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+                    title="Clear"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}
@@ -527,7 +595,7 @@ function ConfigureFeedTab() {
   const { textVariables, mediaVariables, hasAnyVariable } = useConfigureVariables();
   const {
     feedState, updateFeedState, generateVariants, clearVariants,
-    activeVariantId, variants, updateVariantField,
+    activeVariantId, variants, updateVariantField, setVariantElementSrc,
   } = useDesignWorkspace();
 
   const currentVariant = activeVariantId !== null
@@ -546,23 +614,24 @@ function ConfigureFeedTab() {
   const mediaColMap   = feedState.mediaColMap;
 
   // ── Clean up stale keys when variables are removed from the canvas ──
+  // IMPORTANT: feedState.columnMapping / feedState.mediaColMap must be in the
+  // dep array so the cleanup reads the latest values and never overwrites
+  // auto-matched columns with empty strings due to a stale closure.
   useEffect(() => {
     const next: Record<string, string> = {};
-    textVariables.forEach(({ key }) => { next[key] = feedState.columnMapping[key] ?? ''; });
-    if (JSON.stringify(next) !== JSON.stringify(feedState.columnMapping)) {
+    textVariables.forEach(({ key }) => { next[key] = columnMapping[key] ?? ''; });
+    if (JSON.stringify(next) !== JSON.stringify(columnMapping)) {
       updateFeedState({ columnMapping: next });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textVariables]);
+  }, [textVariables, columnMapping]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const next: Record<string, string> = {};
-    mediaVariables.forEach(({ id }) => { next[id] = feedState.mediaColMap[id] ?? ''; });
-    if (JSON.stringify(next) !== JSON.stringify(feedState.mediaColMap)) {
+    mediaVariables.forEach(({ id }) => { next[id] = mediaColMap[id] ?? ''; });
+    if (JSON.stringify(next) !== JSON.stringify(mediaColMap)) {
       updateFeedState({ mediaColMap: next });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mediaVariables]);
+  }, [mediaVariables, mediaColMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fetch columns when feed is selected ────────────────────────
   // Deps: only selectedFeedId — intentionally excludes feedState.status.
@@ -653,6 +722,7 @@ function ConfigureFeedTab() {
 
     const genKey = JSON.stringify({
       colMap,
+      mediaColMap: feedState.mediaColMap,
       rowCount: feedState.rows.length,
       varKeys:  textVariables.map(v => v.key).sort(),
     });
@@ -662,7 +732,7 @@ function ConfigureFeedTab() {
     updateFeedState({ lastGenKey: genKey });
     generateVariants(feedState.rows, colMap);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feedState.status, feedState.rows, feedState.columns, feedState.columnMapping, textVariables]);
+  }, [feedState.status, feedState.rows, feedState.columns, feedState.columnMapping, feedState.mediaColMap, textVariables]);
 
   // ── Auto-match text variables when columns load or variables change ──
   useEffect(() => {
@@ -688,7 +758,7 @@ function ConfigureFeedTab() {
     });
     if (changed) updateFeedState({ mediaColMap: next });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mediaVariables]);
+  }, [feedColumns, mediaVariables]);
 
   const activeFeed = PRESET_FEEDS.find(f => f.id === selectedFeed) ?? null;
 
@@ -852,14 +922,22 @@ function ConfigureFeedTab() {
         )
       )}
 
-      {/* Media — column-mapping selects when feed is loaded */}
+      {/* Media — column selectors on Master, URL inputs on Variant */}
       {mediaVariables.length > 0 && feedColumns.length > 0 && (
-        <ConfigureFeedMediaBlock
-          variables={mediaVariables}
-          values={mediaColMap}
-          columns={feedColumns}
-          onChange={(id, col) => updateFeedState({ mediaColMap: { ...mediaColMap, [id]: col } })}
-        />
+        activeVariantId !== null && currentVariant ? (
+          <ConfigureVariantMediaBlock
+            variables={mediaVariables}
+            elements={currentVariant.elements}
+            onChangeSrc={(elId, src) => setVariantElementSrc(activeVariantId, elId, src)}
+          />
+        ) : (
+          <ConfigureFeedMediaBlock
+            variables={mediaVariables}
+            values={mediaColMap}
+            columns={feedColumns}
+            onChange={(id, col) => updateFeedState({ mediaColMap: { ...mediaColMap, [id]: col } })}
+          />
+        )
       )}
 
       {/* Media — manual picker when no feed columns available */}

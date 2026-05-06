@@ -126,6 +126,7 @@ function PageCard({
   canvasW,
   canvasH,
   onClick,
+  pageId,
 }: {
   label:      string;
   isActive:   boolean;
@@ -136,11 +137,13 @@ function PageCard({
   canvasW:    number;
   canvasH:    number;
   onClick:    () => void;
+  pageId:     string;
 }) {
   return (
     <button
       onClick={onClick}
       title={label}
+      data-page-id={pageId}
       className="flex flex-col items-center gap-1 shrink-0 group"
     >
       {/* Thumbnail */}
@@ -204,6 +207,35 @@ export function PageStrip() {
 
   const masterThumbElements = activeVariantId === null ? canvasElements : masterElements;
 
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Scroll active card into view whenever activeVariantId changes
+  React.useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const pageId = activeVariantId ?? 'master';
+    const card = container.querySelector<HTMLElement>(`[data-page-id="${pageId}"]`);
+    if (!card) return;
+    // Smooth-scroll so the card is fully visible inside the strip
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+  }, [activeVariantId]);
+
+  // Keyboard navigation: ArrowLeft / ArrowRight moves through Master + variants
+  React.useEffect(() => {
+    if (variants.length === 0) return;
+    const pages: Array<string | null> = [null, ...variants.map(v => v.id)];
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const idx = pages.indexOf(activeVariantId);
+      if (idx === -1) return;
+      const next = e.key === 'ArrowRight' ? Math.min(idx + 1, pages.length - 1) : Math.max(idx - 1, 0);
+      if (next !== idx) { e.preventDefault(); switchToPage(pages[next]); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [variants, activeVariantId, switchToPage]);
+
   if (variants.length === 0) return null;
 
   const isLeftPaneVisible =
@@ -238,7 +270,7 @@ export function PageStrip() {
       }}
       onClick={e => e.stopPropagation()}
     >
-      <div className="flex items-center h-full px-3 gap-2.5 overflow-x-auto">
+      <div ref={scrollRef} className="flex items-center h-full px-3 gap-2.5 overflow-x-auto">
         {/* Master card */}
         <PageCard
           label="Master"
@@ -250,6 +282,7 @@ export function PageStrip() {
           canvasW={canvasWidth}
           canvasH={canvasHeight}
           onClick={() => switchToPage(null)}
+          pageId="master"
         />
 
         {/* Separator */}
@@ -268,6 +301,7 @@ export function PageStrip() {
             canvasW={canvasWidth}
             canvasH={canvasHeight}
             onClick={() => switchToPage(v.id)}
+            pageId={v.id}
           />
         ))}
       </div>
