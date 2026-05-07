@@ -8,7 +8,7 @@ const KEY_MAP: Record<string, InsertMenuItem> = {
   t: 'text',
   m: 'dynamicPlaceholder',
   u: 'imagesVideo',
-  c: 'component',
+  p: 'component',   // was 'c' — changed to avoid conflict with comment mode (C)
   a: 'annotation',
   h: 'shapes',
   i: 'icons',

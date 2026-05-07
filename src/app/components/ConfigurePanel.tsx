@@ -764,19 +764,16 @@ function ConfigureFeedTab() {
 
   function handleSelectFeed(id: string) {
     clearVariants();
-    if (!id) {
-      updateFeedState({ selectedFeedId: id, status: 'idle', columns: [], rows: [], rowCount: null });
-    } else {
-      updateFeedState({
-        selectedFeedId: id,
-        status:         'idle',
-        columns:        [],
-        rows:           [],
-        rowCount:       null,
-        columnMapping:  {},
-        mediaColMap:    {},
-      });
-    }
+    updateFeedState({
+      selectedFeedId: id,
+      status:         'idle',
+      columns:        [],
+      rows:           [],
+      rowCount:       null,
+      columnMapping:  {},
+      mediaColMap:    {},
+      lastGenKey:     '',   // ← reset so generation always runs on reconnect
+    });
   }
 
   function handleDisconnect() {
@@ -789,6 +786,7 @@ function ConfigureFeedTab() {
       rowCount:       null,
       columnMapping:  {},
       mediaColMap:    {},
+      lastGenKey:     '',   // ← reset so generation always runs on reconnect
     });
   }
 

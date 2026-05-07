@@ -77,6 +77,39 @@ export interface Layer {
 export interface CanvasPage {
   id: string;
   name: string;
+  /** Snapshot of this page's elements — updated when navigating away, used for thumbnails */
+  elementSnapshot: CanvasElement[];
+}
+
+/** A single reply inside a comment thread. */
+export interface CommentReply {
+  id: string;
+  authorInitials: string;
+  authorColor: string;
+  text: string;
+  timestamp: string;
+}
+
+/** A comment anchored to a specific canvas element or a drag-selected area. */
+export interface CanvasComment {
+  id: string;
+  authorInitials: string;
+  authorColor: string;
+  text: string;
+  timestamp: string;
+  resolved: boolean;
+  /** Threaded replies */
+  replies?: CommentReply[];
+  /** Single-element mode: ID of the canvas element */
+  elementId?: string;
+  /** Single-element mode: display name snapshotted at creation */
+  elementName?: string;
+  /** Area-selection mode: bounding rect in canvas coordinates */
+  selectionRect?: { x: number; y: number; width: number; height: number };
+  /** Area-selection mode: IDs of all intersecting elements */
+  selectionElementIds?: string[];
+  /** Area-selection mode: count of intersecting elements */
+  selectionElementCount?: number;
 }
 
 export interface TextProperties {
@@ -105,7 +138,7 @@ export interface DesignWorkspaceState {
   selectedElementType: string | null;
   rightPanelForcedOpen: boolean;
   activityPanelOpen: boolean;
-  activityPanelTab: 'eventLog' | 'comments';
+  activityPanelTab: 'pages' | 'eventLog' | 'comments';
   isPreviewMode: boolean;
   isTimelineVisible: boolean;
   isTimelineExpanded: boolean;
@@ -243,6 +276,36 @@ export interface DesignWorkspaceState {
   setIsTimelineExpanded: (v: boolean) => void;
   setAudioPlaceholderInTimeline: (v: boolean) => void;
   setActivePageId: (id: string) => void;
+  /** Switch to a template canvas page (saves current, loads target) */
+  switchCanvasPage: (pageId: string) => void;
+  /** Add a new empty canvas page and switch to it */
+  addCanvasPage: () => void;
+  /** Duplicate a canvas page (all elements cloned) and switch to the copy */
+  duplicateCanvasPage: (pageId: string) => void;
+  /** Delete a canvas page (only allowed if ≥ 2 pages exist) */
+  deleteCanvasPage: (pageId: string) => void;
+  /** Rename a canvas page */
+  renameCanvasPage: (pageId: string, name: string) => void;
+
+  // ── Comment mode ─────────────────────────────────────────────────
+  /** Whether the canvas is in comment-placement mode (activated by pressing C) */
+  commentMode: boolean;
+  /** All canvas comments created in this session */
+  canvasComments: CanvasComment[];
+  /** ID of the comment currently highlighted (from panel click or balloon click) */
+  highlightedCommentId: string | null;
+  setCommentMode: (v: boolean) => void;
+  addCanvasComment: (
+    text: string,
+    elementId?: string,
+    elementName?: string,
+    selectionRect?: { x: number; y: number; width: number; height: number },
+    selectionElementIds?: string[],
+  ) => void;
+  toggleCanvasCommentResolved: (id: string) => void;
+  setHighlightedCommentId: (id: string | null) => void;
+  addCommentReply: (commentId: string, text: string) => void;
+
   setLayerVisibility: (id: string, visible: boolean) => void;
   setLayerLocked: (id: string, locked: boolean) => void;
   setLayerName: (id: string, name: string) => void;
@@ -258,7 +321,7 @@ export interface DesignWorkspaceState {
   fitCanvasToScreen: () => void;
   setRightPanelForcedOpen: (v: boolean) => void;
   setActivityPanelOpen: (v: boolean) => void;
-  setActivityPanelTab: (tab: 'eventLog' | 'comments') => void;
+  setActivityPanelTab: (tab: 'pages' | 'eventLog' | 'comments') => void;
   triggerImagesVideoMenu: () => void;
   updateSettings: (patch: Partial<Settings>) => void;
   /** V59: Set the group that should pulse as a drop target (null to clear) */
@@ -526,12 +589,12 @@ const defaultContextValue: DesignWorkspaceState = {
   selectedElementType: null,
   rightPanelForcedOpen: false,
   activityPanelOpen: false,
-  activityPanelTab: 'eventLog',
+  activityPanelTab: 'pages',
   isPreviewMode: false,
   isTimelineVisible: true,
   isTimelineExpanded: false,
   audioPlaceholderInTimeline: false,
-  canvasPages: [{ id: 'page-1', name: 'Canvas 1' }],
+  canvasPages: [{ id: 'page-1', name: 'Canvas 1', elementSnapshot: [] }],
   activePageId: 'page-1',
   layers: [],
   templateName: 'APR Square Banner 600 x 600px',
@@ -575,6 +638,19 @@ const defaultContextValue: DesignWorkspaceState = {
   setIsTimelineExpanded: noop,
   setAudioPlaceholderInTimeline: noop,
   setActivePageId: noop,
+  switchCanvasPage: noop,
+  addCanvasPage: noop,
+  duplicateCanvasPage: noop,
+  deleteCanvasPage: noop,
+  renameCanvasPage: noop,
+  commentMode: false,
+  canvasComments: [],
+  highlightedCommentId: null,
+  setCommentMode: noop,
+  addCanvasComment: noop,
+  toggleCanvasCommentResolved: noop,
+  setHighlightedCommentId: noop,
+  addCommentReply: noop,
   setLayerVisibility: noop,
   setLayerLocked: noop,
   setLayerName: noop,
@@ -621,12 +697,12 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
 
   const [rightPanelForcedOpen, setRightPanelForcedOpenState] = useState(false);
   const [activityPanelOpen, setActivityPanelOpenState] = useState(false);
-  const [activityPanelTab, setActivityPanelTabState] = useState<'eventLog' | 'comments'>('eventLog');
+  const [activityPanelTab, setActivityPanelTabState] = useState<'pages' | 'eventLog' | 'comments'>('pages');
   const [isPreviewMode, setIsPreviewModeState] = useState(false);
   const [isTimelineVisible, setIsTimelineVisibleState] = useState(true);
   const [isTimelineExpanded, setIsTimelineExpandedState] = useState(false);
   const [audioPlaceholderInTimeline, setAudioPlaceholderInTimelineState] = useState(false);
-  const [canvasPages] = useState<CanvasPage[]>([{ id: 'page-1', name: 'Canvas 1' }]);
+  const [canvasPages, setCanvasPages] = useState<CanvasPage[]>([{ id: 'page-1', name: 'Canvas 1', elementSnapshot: [] }]);
   const [activePageId, setActivePageIdState] = useState('page-1');
   const [layers, setLayers] = useState<Layer[]>([]);
   const [canvasElements, setCanvasElements] = useState<CanvasElement[]>([]);
@@ -644,6 +720,10 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   // V49: History stacks
   const [history, setHistory] = useState<HistorySnapshot[]>([]);
   const [future,  setFuture]  = useState<HistorySnapshot[]>([]);
+
+  // Per-page history: stores {history, future} keyed by page ID (null = Master).
+  // Saved when leaving a page; restored when entering one.
+  const pageHistoryRef = useRef<Map<string | null, { h: HistorySnapshot[]; f: HistorySnapshot[] }>>(new Map());
 
   // V59: Group drag target
   const [dragTargetGroupId, setDragTargetGroupIdState] = useState<string | null>(null);
@@ -698,6 +778,70 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   feedStateRef.current = feedState;
   // Set to true when canvas is mutated while on a variant page
   const variantDirtyRef = useRef(false);
+
+  // Live refs for canvas page management
+  const activePageIdRef = useRef('page-1');
+  activePageIdRef.current = activePageId;
+  const canvasPagesRef = useRef<CanvasPage[]>([]);
+  canvasPagesRef.current = canvasPages;
+  // Per-page storage: { elements, layers, history, future } keyed by page ID
+  const canvasPageDataRef = useRef<Map<string, {
+    elements: CanvasElement[];
+    layers:   Layer[];
+    history:  HistorySnapshot[];
+    future:   HistorySnapshot[];
+  }>>(new Map());
+
+  // ── Comment mode state ────────────────────────────────────────
+  const [commentMode, setCommentModeState]           = useState(false);
+  const [canvasComments, setCanvasComments]           = useState<CanvasComment[]>([]);
+  const [highlightedCommentId, setHighlightedCommentIdState] = useState<string | null>(null);
+
+  const setCommentMode = useCallback((v: boolean) => setCommentModeState(v), []);
+
+  const addCanvasComment = useCallback((
+    text: string,
+    elementId?: string,
+    elementName?: string,
+    selectionRect?: { x: number; y: number; width: number; height: number },
+    selectionElementIds?: string[],
+  ) => {
+    const comment: CanvasComment = {
+      id:                   generateId(),
+      authorInitials:       'LM',
+      authorColor:          '#7BB3E0',
+      text:                 text.trim(),
+      timestamp:            'just now',
+      resolved:             false,
+      elementId,
+      elementName,
+      selectionRect,
+      selectionElementIds,
+      selectionElementCount: selectionElementIds?.length,
+    };
+    setCanvasComments(prev => [comment, ...prev]);
+  }, []);
+
+  const toggleCanvasCommentResolved = useCallback((id: string) => {
+    setCanvasComments(prev => prev.map(c => c.id === id ? { ...c, resolved: !c.resolved } : c));
+  }, []);
+
+  const setHighlightedCommentId = useCallback((id: string | null) => {
+    setHighlightedCommentIdState(id);
+  }, []);
+
+  const addCommentReply = useCallback((commentId: string, text: string) => {
+    const reply: CommentReply = {
+      id:             generateId(),
+      authorInitials: 'LM',
+      authorColor:    '#7BB3E0',
+      text:           text.trim(),
+      timestamp:      'just now',
+    };
+    setCanvasComments(prev => prev.map(c =>
+      c.id === commentId ? { ...c, replies: [...(c.replies ?? []), reply] } : c
+    ));
+  }, []);
 
   function typeForId(id: string): string | null {
     return canvasElementsRef.current.find(el => el.id === id)?.type ?? null;
@@ -1373,6 +1517,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setSelectedElementType(null);
     setHistory([]);
     setFuture([]);
+    pageHistoryRef.current.clear();
   }, []);
 
   const switchToPage = useCallback((variantId: string | null) => {
@@ -1430,6 +1575,13 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
       ));
     }
 
+    // ── Save outgoing page history, restore incoming page history ─
+    pageHistoryRef.current.set(currVariantId, {
+      h: historyRef.current,
+      f: futureRef.current,
+    });
+    const incoming = pageHistoryRef.current.get(variantId) ?? { h: [], f: [] };
+
     // ── Load target ────────────────────────────────────────────
     variantDirtyRef.current = false;
     setCanvasElements(loadElements);
@@ -1438,8 +1590,8 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setSelectedElementIds([]);
     setSelectedElementType(null);
     setEditingGroupId(null);
-    setHistory([]);
-    setFuture([]);
+    setHistory(incoming.h);
+    setFuture(incoming.f);
   }, []);
 
   const clearVariants = useCallback(() => {
@@ -1461,6 +1613,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setSelectedElementType(null);
     setHistory([]);
     setFuture([]);
+    pageHistoryRef.current.clear();
   }, []);
 
   const updateVariantField = useCallback((
@@ -1689,9 +1842,160 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   const setIsTimelineExpanded = useCallback((v: boolean) => setIsTimelineExpandedState(v), []);
   const setAudioPlaceholderInTimeline = useCallback((v: boolean) => setAudioPlaceholderInTimelineState(v), []);
   const setActivePageId = useCallback((id: string) => setActivePageIdState(id), []);
+
+  // ── Canvas page management ─────────────────────────────────────
+  /** Save current page state into canvasPageDataRef and update its snapshot. */
+  function saveCurrentPageData() {
+    const pid = activePageIdRef.current;
+    const els = canvasElementsRef.current;
+    const lys = layersRef.current;
+    canvasPageDataRef.current.set(pid, {
+      elements: [...els],
+      layers:   [...lys],
+      history:  [...historyRef.current],
+      future:   [...futureRef.current],
+    });
+    // Persist snapshot in state so the Pages tab thumbnails re-render
+    setCanvasPages(prev => prev.map(p =>
+      p.id === pid ? { ...p, elementSnapshot: [...els] } : p
+    ));
+  }
+
+  /** Load a page's stored data into the live canvas state. */
+  function loadPageData(pageId: string) {
+    const data = canvasPageDataRef.current.get(pageId) ?? { elements: [], layers: [], history: [], future: [] };
+    setCanvasElements([...data.elements]);
+    setLayers([...data.layers]);
+    setActivePageIdState(pageId);
+    setSelectedElementIds([]);
+    setSelectedElementType(null);
+    setEditingGroupId(null);
+    setHistory(data.history);
+    setFuture(data.future);
+  }
+
+  const switchCanvasPage = useCallback((pageId: string) => {
+    if (activePageIdRef.current === pageId) return;
+    saveCurrentPageData();
+    loadPageData(pageId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const addCanvasPage = useCallback(() => {
+    const newPageId = generateId();
+    const newName   = `Canvas ${canvasPagesRef.current.length + 1}`;
+    saveCurrentPageData();
+    // Initialize empty page data
+    canvasPageDataRef.current.set(newPageId, { elements: [], layers: [], history: [], future: [] });
+    setCanvasPages(prev => [...prev, { id: newPageId, name: newName, elementSnapshot: [] }]);
+    setCanvasElements([]);
+    setLayers([]);
+    setActivePageIdState(newPageId);
+    setSelectedElementIds([]);
+    setSelectedElementType(null);
+    setEditingGroupId(null);
+    setHistory([]);
+    setFuture([]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const duplicateCanvasPage = useCallback((pageId: string) => {
+    const currPageId = activePageIdRef.current;
+    // Determine source elements
+    const isCurrent = pageId === currPageId;
+    const srcElements = isCurrent
+      ? canvasElementsRef.current
+      : (canvasPageDataRef.current.get(pageId)?.elements ?? []);
+    const srcLayers = isCurrent
+      ? layersRef.current
+      : (canvasPageDataRef.current.get(pageId)?.layers ?? []);
+
+    // Re-ID all elements so they're independent from the source
+    const idMap = new Map<string, string>();
+    const newElements: CanvasElement[] = srcElements.map(el => {
+      const newId = generateId();
+      idMap.set(el.id, newId);
+      return { ...el, id: newId };
+    });
+    const fixedElements = newElements.map(el => ({
+      ...el,
+      groupId:    el.groupId    ? (idMap.get(el.groupId) ?? el.groupId) : undefined,
+      groupedIds: el.groupedIds ? el.groupedIds.map(gid => idMap.get(gid) ?? gid) : undefined,
+    }));
+    const newLayers = srcLayers.map(l => ({
+      ...l,
+      id: idMap.get(l.id) ?? generateId(),
+    }));
+
+    const newPageId   = generateId();
+    const srcName     = canvasPagesRef.current.find(p => p.id === pageId)?.name ?? 'Canvas';
+    const newPageName = `${srcName} (copy)`;
+    const srcIndex    = canvasPagesRef.current.findIndex(p => p.id === pageId);
+
+    // Save current page before navigating
+    saveCurrentPageData();
+
+    // Store new page data
+    canvasPageDataRef.current.set(newPageId, {
+      elements: fixedElements,
+      layers:   newLayers,
+      history:  [],
+      future:   [],
+    });
+
+    setCanvasPages(prev => {
+      const next = [...prev];
+      next.splice(srcIndex + 1, 0, { id: newPageId, name: newPageName, elementSnapshot: [...fixedElements] });
+      return next;
+    });
+
+    // Switch to the new page
+    setCanvasElements(fixedElements);
+    setLayers(newLayers);
+    setActivePageIdState(newPageId);
+    setSelectedElementIds([]);
+    setSelectedElementType(null);
+    setEditingGroupId(null);
+    setHistory([]);
+    setFuture([]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const deleteCanvasPage = useCallback((pageId: string) => {
+    const pages = canvasPagesRef.current;
+    if (pages.length <= 1) return; // must keep at least one page
+    const currPageId = activePageIdRef.current;
+    const pageIndex  = pages.findIndex(p => p.id === pageId);
+
+    // Remove from state and ref storage
+    canvasPageDataRef.current.delete(pageId);
+    setCanvasPages(prev => prev.filter(p => p.id !== pageId));
+
+    // If we're deleting the currently active page, navigate away
+    if (pageId === currPageId) {
+      const remaining   = pages.filter(p => p.id !== pageId);
+      const targetPage  = remaining[Math.max(0, pageIndex - 1)];
+      const targetData  = canvasPageDataRef.current.get(targetPage.id) ?? { elements: [], layers: [], history: [], future: [] };
+      setCanvasElements([...targetData.elements]);
+      setLayers([...targetData.layers]);
+      setActivePageIdState(targetPage.id);
+      setSelectedElementIds([]);
+      setSelectedElementType(null);
+      setEditingGroupId(null);
+      setHistory(targetData.history);
+      setFuture(targetData.future);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const renameCanvasPage = useCallback((pageId: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setCanvasPages(prev => prev.map(p => p.id === pageId ? { ...p, name: trimmed } : p));
+  }, []);
   const setRightPanelForcedOpen = useCallback((v: boolean) => setRightPanelForcedOpenState(v), []);
   const setActivityPanelOpen = useCallback((v: boolean) => setActivityPanelOpenState(v), []);
-  const setActivityPanelTab  = useCallback((tab: 'eventLog' | 'comments') => setActivityPanelTabState(tab), []);
+  const setActivityPanelTab  = useCallback((tab: 'pages' | 'eventLog' | 'comments') => setActivityPanelTabState(tab), []);
 
   const triggerImagesVideoMenu = useCallback(
     () => setImagesVideoMenuTrigger(prev => prev + 1),
@@ -1832,7 +2136,11 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setSelectedElement,
     setActivePanel, setActiveInsertItem,
     setIsPreviewMode, setIsTimelineVisible, setIsTimelineExpanded, setAudioPlaceholderInTimeline,
-    setActivePageId, setLayerVisibility, setLayerLocked, setLayerName,
+    setActivePageId,
+    switchCanvasPage, addCanvasPage, duplicateCanvasPage, deleteCanvasPage, renameCanvasPage,
+    commentMode, canvasComments, highlightedCommentId,
+    setCommentMode, addCanvasComment, toggleCanvasCommentResolved, setHighlightedCommentId, addCommentReply,
+    setLayerVisibility, setLayerLocked, setLayerName,
     setTextProp, setCanvasOffset, setCanvasScale, setCanvasDimensions, fitCanvasToScreen, setRightPanelForcedOpen,
     setActivityPanelOpen, setActivityPanelTab,
     triggerImagesVideoMenu,

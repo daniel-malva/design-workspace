@@ -94,19 +94,18 @@ function MiniElement({ el }: { el: CanvasElement }) {
     if (el.src) {
       const objFit = isLogo ? 'contain' : 'cover';
       const mask   = isProduct
-        ? 'radial-gradient(ellipse 95% 90% at 50% 50%, black 70%, rgba(0,0,0,0.7) 82%, rgba(0,0,0,0.15) 93%, transparent 100%)'
+        ? 'linear-gradient(to top, transparent 0%, black 30%)'
         : undefined;
       return (
         <div style={{ ...base, borderRadius: radius, overflow: 'hidden' }}>
-          <img
-            src={el.src}
-            alt=""
-            draggable={false}
+          <img src={el.src} alt="" draggable={false}
             style={{
-              width: '100%', height: '100%', objectFit: objFit, display: 'block',
+              width: '100%', height: '100%',
+              objectFit: objFit,
+              objectPosition: 'center center',
+              display: 'block',
               WebkitMaskImage: mask, maskImage: mask,
-            }}
-          />
+            }} />
         </div>
       );
     }
@@ -171,7 +170,7 @@ function MiniElement({ el }: { el: CanvasElement }) {
   return null;
 }
 
-const MiniCanvas = React.memo(function MiniCanvas({
+export const MiniCanvas = React.memo(function MiniCanvas({
   elements, canvasW, canvasH, thumbW, thumbH,
 }: {
   elements: CanvasElement[];

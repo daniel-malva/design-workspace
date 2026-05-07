@@ -76,27 +76,42 @@ function PlaceholderElement({ variant, width, height, src }: { variant: string; 
     const isBg      = variant === 'background' || variant === 'background-image' || variant === 'background-video';
     const isLogo    = variant === 'logo' || variant === 'primary-logo' || variant === 'secondary-logo' || variant === 'event-logo';
     const isProduct = variant === 'product' || variant === 'jellybean' || variant === 'image' || variant === 'media';
-    const objFit    = isLogo ? 'contain' : 'cover';
 
-    // Product/jellybean shots typically have a shadow below the car that gets
-    // hard-clipped by overflow:hidden. A radial mask fades the edges softly so
-    // the shadow dissolves naturally rather than cutting off abruptly.
-    const maskImage = isProduct
-      ? 'radial-gradient(ellipse 95% 90% at 50% 50%, black 70%, rgba(0,0,0,0.7) 82%, rgba(0,0,0,0.15) 93%, transparent 100%)'
-      : undefined;
+    // ── Non-product: logo = contain, background = cover ──────────────
+    if (!isProduct) {
+      return (
+        <div className="w-full h-full relative overflow-hidden" style={{ borderRadius: isBg ? 0 : 4 }}>
+          <img
+            src={src}
+            alt=""
+            draggable={false}
+            className="w-full h-full"
+            style={{ objectFit: isLogo ? 'contain' : 'cover', display: 'block' }}
+          />
+        </div>
+      );
+    }
 
+    // ── Product / car shots ───────────────────────────────────────────
+    // `cover` + `center center`: fills the placeholder completely so the car
+    // always looks appropriately large. For landscape press/editorial shots
+    // (1920×1080) in a square placeholder the scale factor is height-bound
+    // (390/1080 ≈ 0.36), which clips only ~8% from each horizontal side —
+    // that is road or background, not the car body itself.
+    // The bottom linear fade dissolves the ground shadow without hard edges.
     return (
-      <div className="w-full h-full relative overflow-hidden" style={{ borderRadius: isBg ? 0 : 4 }}>
+      <div className="w-full h-full overflow-hidden" style={{ borderRadius: 4 }}>
         <img
           src={src}
           alt=""
           draggable={false}
           className="w-full h-full"
           style={{
-            objectFit: objFit,
-            display: 'block',
-            WebkitMaskImage: maskImage,
-            maskImage,
+            objectFit:       'cover',
+            objectPosition:  'center center',
+            display:         'block',
+            WebkitMaskImage: 'linear-gradient(to top, transparent 0%, black 30%)',
+            maskImage:       'linear-gradient(to top, transparent 0%, black 30%)',
           }}
         />
       </div>
