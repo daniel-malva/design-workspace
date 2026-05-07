@@ -1,4 +1,12 @@
 import React from 'react';
+import {
+  Star, Heart, Home, Cloud, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
+  Play, AlertTriangle, Square, Circle, CheckCircle, PlusCircle,
+  User, Users, Smile, Settings, Trophy, Lightbulb, Plane, Anchor, Clock,
+  ChevronsLeftRight, Triangle, Maximize2, Mountain, Image as ImageIcon,
+  UserPlus, UserMinus, UserCheck, Bot, Coffee, Bug, Infinity, Accessibility,
+  Landmark, Zap, Check, ChevronRight as ChevronRightIcon,
+} from 'lucide-react';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
 import type { CanvasElement } from '../store/useDesignWorkspaceStore';
 import {
@@ -27,6 +35,57 @@ const PLACEHOLDER_CFG: Record<string, { color: string; label: string; shortLabel
   'primary-logo':     { color: '#7b1fa2', label: 'Primary Logo',     shortLabel: 'Primary'    },
   'secondary-logo':   { color: '#c62828', label: 'Secondary Logo',   shortLabel: 'Secondary'  },
   'event-logo':       { color: '#1565c0', label: 'Event Logo',       shortLabel: 'Event'      },
+};
+
+// ─── Shape icon map — mirrors CanvasFrame.tsx exactly ─────────────
+const shapeIconMap: Record<string, React.ReactNode> = {
+  'star-f':   <Star   fill="currentColor" className="w-full h-full" />,
+  'star':     <Star   className="w-full h-full" />,
+  'heart':    <Heart  fill="currentColor" className="w-full h-full" />,
+  'home':     <Home   className="w-full h-full" />,
+  'cloud':    <Cloud  className="w-full h-full" />,
+  'arr-up':   <ArrowUp    className="w-full h-full" />,
+  'arr-dn':   <ArrowDown  className="w-full h-full" />,
+  'arr-lt':   <ArrowLeft  className="w-full h-full" />,
+  'arr-rt':   <ArrowRight className="w-full h-full" />,
+  'dbl-arr':  <ChevronsLeftRight className="w-full h-full" />,
+  'tri-up':   <Triangle fill="currentColor" className="w-full h-full" />,
+  'play':     <Play   fill="currentColor" className="w-full h-full" />,
+  'warn':     <AlertTriangle fill="currentColor" className="w-full h-full" />,
+  'square-f': <Square fill="currentColor" className="w-full h-full" />,
+  'square':   <Square className="w-full h-full" />,
+  'circle-f': <Circle fill="currentColor" className="w-full h-full" />,
+  'circle':   <Circle className="w-full h-full" />,
+  'chk-c':    <CheckCircle className="w-full h-full" />,
+  'plus-c':   <PlusCircle  className="w-full h-full" />,
+  'minimize': <Maximize2   className="w-full h-full" />,
+  'mtn':      <Mountain    className="w-full h-full" />,
+  'img':      <ImageIcon   className="w-full h-full" />,
+  'person':   <User        className="w-full h-full" />,
+  'per-add':  <UserPlus    className="w-full h-full" />,
+  'persons':  <Users       className="w-full h-full" />,
+  'per-rm':   <UserMinus   className="w-full h-full" />,
+  'per-chk':  <UserCheck   className="w-full h-full" />,
+  'emoji':    <Smile       className="w-full h-full" />,
+  'emoji-a':  <Bot         className="w-full h-full" />,
+  'settings': <Settings    className="w-full h-full" />,
+  'trophy':   <Trophy      className="w-full h-full" />,
+  'bulb':     <Lightbulb   className="w-full h-full" />,
+  'symbols':  <Zap         className="w-full h-full" />,
+  'mug':      <Coffee      className="w-full h-full" />,
+  'walk':     <Accessibility className="w-full h-full" />,
+  'bug':      <Bug         className="w-full h-full" />,
+  'bank':     <Landmark    className="w-full h-full" />,
+  'inf':      <Infinity    className="w-full h-full" />,
+  'plane':    <Plane       className="w-full h-full" />,
+  'anchor':   <Anchor      className="w-full h-full" />,
+  'clock':    <Clock       className="w-full h-full" />,
+  'check':    <Check       className="w-full h-full" />,
+  'chk-c-o':  <Check       className="w-full h-full" />,
+  'warn-o':   <AlertTriangle className="w-full h-full" />,
+  'tri-up-o': <Triangle    className="w-full h-full" />,
+  'per-o':    <User        className="w-full h-full" />,
+  'play-c':   <Play        className="w-full h-full" />,
 };
 
 // ─── Mini canvas renderer ──────────────────────────────────────────
@@ -62,23 +121,58 @@ function MiniElement({ el }: { el: CanvasElement }) {
 
   // ── Shape ─────────────────────────────────────────────────────────
   if (el.type === 'shape') {
+    const shapeIcon = shapeIconMap[el.shapeVariant ?? 'square'] ?? <Square className="w-full h-full" />;
     return (
       <div style={{
         ...base,
-        background:   el.style?.backgroundImage ?? el.style?.backgroundColor ?? '#D0D0D0',
-        borderRadius: el.shapeVariant === 'circle' ? '50%' : undefined,
-      }} />
+        backgroundColor: el.style?.backgroundColor,
+        backgroundImage: el.style?.backgroundImage,
+        color:           el.style?.color ?? '#6B7280',
+        display:         'flex',
+        alignItems:      'center',
+        justifyContent:  'center',
+        padding:         '10%',
+        boxSizing:       'border-box',
+      }}>
+        {shapeIcon}
+      </div>
     );
   }
 
   // ── Line ──────────────────────────────────────────────────────────
   if (el.type === 'line') {
-    return <div style={{ ...base, backgroundColor: el.style?.color ?? '#111' }} />;
+    return (
+      <div style={{ ...base, display: 'flex', alignItems: 'center' }}>
+        {el.lineVariant === 'arrow' ? (
+          <>
+            <div style={{ flex: 1, height: 1.5, backgroundColor: el.style?.color ?? '#111' }} />
+            <ChevronRightIcon size={8} color={el.style?.color ?? '#111'} style={{ flexShrink: 0 }} />
+          </>
+        ) : (
+          <div style={{
+            width: '100%', height: 1.5,
+            backgroundColor: el.lineVariant === 'dashed' || el.lineVariant === 'dotted' ? 'transparent' : el.style?.color ?? '#111',
+            borderTop: el.lineVariant === 'dashed' ? `1.5px dashed ${el.style?.color ?? '#111'}`
+                     : el.lineVariant === 'dotted' ? `1.5px dotted ${el.style?.color ?? '#111'}`
+                     : undefined,
+          }} />
+        )}
+      </div>
+    );
   }
 
   // ── Icon ──────────────────────────────────────────────────────────
-  if (el.type === 'icon' && el.iconSrc) {
-    return <img src={el.iconSrc} alt="" draggable={false} style={{ ...base, objectFit: 'contain' }} />;
+  if (el.type === 'icon') {
+    if (el.iconSrc) {
+      return <img src={el.iconSrc} alt="" draggable={false} style={{ ...base, objectFit: 'contain' }} />;
+    }
+    // No src yet — show a tinted placeholder so the element is visible in the thumbnail
+    return (
+      <div style={{ ...base, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: el.style?.color ?? '#6B7280' }}>
+        <Smile className="w-full h-full" />
+      </div>
+    );
   }
 
   // ── Placeholder ───────────────────────────────────────────────────
