@@ -12,6 +12,23 @@ import {
   PAGE_STRIP_HEIGHT,
 } from '../constants/layout';
 
+// ─── Placeholder config — mirrors CanvasFrame.tsx exactly ─────────
+
+const PLACEHOLDER_CFG: Record<string, { color: string; label: string; shortLabel: string }> = {
+  logo:               { color: '#7b1fa2', label: 'Logo',             shortLabel: 'Logo'       },
+  background:         { color: '#4caf50', label: 'Background',       shortLabel: 'Background' },
+  jellybean:          { color: '#3949ab', label: 'Jellybean',        shortLabel: 'Jellybean'  },
+  media:              { color: '#0277bd', label: 'Media',            shortLabel: 'Media'      },
+  audio:              { color: '#ff7043', label: 'Audio',            shortLabel: 'Audio'      },
+  product:            { color: '#3949ab', label: 'Product',          shortLabel: 'Product'    },
+  image:              { color: '#0277bd', label: 'Image',            shortLabel: 'Image'      },
+  'background-image': { color: '#4caf50', label: 'Background Image', shortLabel: 'Background' },
+  'background-video': { color: '#4caf50', label: 'Background Video', shortLabel: 'Bg. Video'  },
+  'primary-logo':     { color: '#7b1fa2', label: 'Primary Logo',     shortLabel: 'Primary'    },
+  'secondary-logo':   { color: '#c62828', label: 'Secondary Logo',   shortLabel: 'Secondary'  },
+  'event-logo':       { color: '#1565c0', label: 'Event Logo',       shortLabel: 'Event'      },
+};
+
 // ─── Mini canvas renderer ──────────────────────────────────────────
 
 function MiniElement({ el }: { el: CanvasElement }) {
@@ -22,17 +39,18 @@ function MiniElement({ el }: { el: CanvasElement }) {
     width:    el.width,
     height:   el.height,
     overflow: 'hidden',
+    opacity:  el.style?.opacity ?? 1,
   };
 
+  // ── Text ──────────────────────────────────────────────────────────
   if (el.type.startsWith('text-')) {
     return (
       <div style={{
         ...base,
         fontSize:   el.style?.fontSize   ?? 16,
         fontWeight: el.style?.fontWeight ?? '400',
-        fontFamily: el.style?.fontFamily ?? 'sans-serif',
+        fontFamily: el.style?.fontFamily ? `'${el.style.fontFamily}',sans-serif` : 'sans-serif',
         color:      el.style?.color      ?? '#111111',
-        opacity:    el.style?.opacity    ?? 1,
         lineHeight: 1.2,
         whiteSpace: 'pre-wrap',
         wordBreak:  'break-word',
@@ -42,56 +60,115 @@ function MiniElement({ el }: { el: CanvasElement }) {
     );
   }
 
+  // ── Shape ─────────────────────────────────────────────────────────
   if (el.type === 'shape') {
     return (
       <div style={{
         ...base,
         background:   el.style?.backgroundImage ?? el.style?.backgroundColor ?? '#D0D0D0',
-        opacity:      el.style?.opacity ?? 1,
         borderRadius: el.shapeVariant === 'circle' ? '50%' : undefined,
       }} />
     );
   }
 
+  // ── Line ──────────────────────────────────────────────────────────
   if (el.type === 'line') {
-    return <div style={{ ...base, backgroundColor: el.style?.color ?? '#111', opacity: el.style?.opacity ?? 1 }} />;
+    return <div style={{ ...base, backgroundColor: el.style?.color ?? '#111' }} />;
   }
 
-  // Placeholder types — show resolved image when available, otherwise colored block
-  if (el.src) {
-    const v         = el.placeholderVariant ?? '';
-    const isLogo    = v === 'logo' || v === 'primary-logo' || v === 'secondary-logo' || v === 'event-logo';
-    const isProduct = v === 'product' || v === 'jellybean' || v === 'image' || v === 'media';
-    const objFit    = isLogo ? 'contain' : 'cover';
-    const mask      = isProduct
-      ? 'radial-gradient(ellipse 95% 90% at 50% 50%, black 70%, rgba(0,0,0,0.7) 82%, rgba(0,0,0,0.15) 93%, transparent 100%)'
-      : undefined;
+  // ── Icon ──────────────────────────────────────────────────────────
+  if (el.type === 'icon' && el.iconSrc) {
+    return <img src={el.iconSrc} alt="" draggable={false} style={{ ...base, objectFit: 'contain' }} />;
+  }
+
+  // ── Placeholder ───────────────────────────────────────────────────
+  if (el.type.startsWith('placeholder-')) {
+    const variant   = el.placeholderVariant ?? el.type.replace('placeholder-', '');
+    const cfg       = PLACEHOLDER_CFG[variant] ?? PLACEHOLDER_CFG['media'];
+    const isBg      = variant === 'background' || variant === 'background-image' || variant === 'background-video';
+    const isLogo    = variant === 'logo' || variant === 'primary-logo' || variant === 'secondary-logo' || variant === 'event-logo';
+    const isProduct = variant === 'product' || variant === 'jellybean' || variant === 'image' || variant === 'media';
+    const radius    = isBg ? 0 : 4;
+
+    // When a feed image has been resolved, render the actual image
+    if (el.src) {
+      const objFit = isLogo ? 'contain' : 'cover';
+      const mask   = isProduct
+        ? 'radial-gradient(ellipse 95% 90% at 50% 50%, black 70%, rgba(0,0,0,0.7) 82%, rgba(0,0,0,0.15) 93%, transparent 100%)'
+        : undefined;
+      return (
+        <div style={{ ...base, borderRadius: radius, overflow: 'hidden' }}>
+          <img
+            src={el.src}
+            alt=""
+            draggable={false}
+            style={{
+              width: '100%', height: '100%', objectFit: objFit, display: 'block',
+              WebkitMaskImage: mask, maskImage: mask,
+            }}
+          />
+        </div>
+      );
+    }
+
+    // No image — render dashed border + badge (matches PlaceholderElement in CanvasFrame)
+    const sw = 3;
+    const minDim = Math.min(el.width, el.height);
+    const showBadge = minDim >= 50;
+    const text   = minDim >= 200 ? cfg.label : cfg.shortLabel;
+    const fSize  = minDim >= 200 ? 14 : 12;
+    const fWeight = minDim >= 200 ? 500 : 400;
+    const pad    = minDim >= 200 ? '8px 6px' : '4px';
+
     return (
-      <div style={{ ...base, opacity: el.style?.opacity ?? 1, overflow: 'hidden' }}>
-        <img
-          src={el.src}
-          alt=""
-          draggable={false}
-          style={{
-            width: '100%', height: '100%', objectFit: objFit, display: 'block',
-            WebkitMaskImage: mask, maskImage: mask,
-          }}
-        />
+      <div style={{
+        ...base,
+        display:         'flex',
+        alignItems:      'center',
+        justifyContent:  'center',
+        borderRadius:    radius,
+        backgroundColor: 'rgba(17,16,20,0.04)',
+      }}>
+        {/* SVG dashed border */}
+        <svg
+          aria-hidden="true"
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}
+        >
+          <rect
+            x={sw / 2} y={sw / 2}
+            width={`calc(100% - ${sw}px)`} height={`calc(100% - ${sw}px)`}
+            fill="none"
+            stroke={cfg.color}
+            strokeWidth={sw}
+            strokeDasharray="12 10"
+            rx={radius} ry={radius}
+          />
+        </svg>
+        {/* Badge */}
+        {showBadge && (
+          <span style={{
+            position:        'relative',
+            color:           '#fff',
+            backgroundColor: cfg.color,
+            fontSize:        fSize,
+            fontFamily:      "'Roboto',sans-serif",
+            fontWeight:      fWeight,
+            lineHeight:      minDim >= 200 ? '1.3' : '12px',
+            padding:         pad,
+            borderRadius:    4,
+            whiteSpace:      'nowrap',
+            letterSpacing:   '0.15px',
+            overflow:        'hidden',
+            maxHeight:       35,
+          }}>
+            {text}
+          </span>
+        )}
       </div>
     );
   }
 
-  const COLORS: Record<string, string> = {
-    'placeholder-background-image': '#c8d8e8',
-    'placeholder-background-video': '#c8cce8',
-    'placeholder-primary-logo':     '#e8c8d0',
-    'placeholder-secondary-logo':   '#e8d0c8',
-    'placeholder-event-logo':       '#d0e8c8',
-    'placeholder-product':          '#e8e8c8',
-    'placeholder-image':            '#d8e8d8',
-    'placeholder-audio':            '#e8d8e8',
-  };
-  return <div style={{ ...base, backgroundColor: COLORS[el.type] ?? '#E0E0E0', opacity: el.style?.opacity ?? 1 }} />;
+  return null;
 }
 
 const MiniCanvas = React.memo(function MiniCanvas({
