@@ -1168,6 +1168,7 @@ export function CanvasArea() {
       p.elementName,
       p.selectionRect,
       p.selectionElementIds,
+      activePageId,
     );
     setPendingComment(null);
     setPendingText('');
@@ -1317,10 +1318,14 @@ export function CanvasArea() {
               {/* ── Avatar balloons — visible in comment mode OR when Comments tab is active ── */}
               {(commentMode || (activityPanelOpen && activityPanelTab === 'comments')) &&
                 canvasComments
-                  .filter(c => !c.resolved && (
-                    (c.elementId && canvasElements.some(e => e.id === c.elementId)) ||
-                    c.selectionRect
-                  ))
+                  .filter(c => !c.resolved &&
+                    // Only show balloons for comments on the active page
+                    (!c.pageId || c.pageId === activePageId) &&
+                    (
+                      (c.elementId && canvasElements.some(e => e.id === c.elementId)) ||
+                      c.selectionRect
+                    )
+                  )
                   .map(comment => {
                     // Anchor: element top-left (single) or selection rect top-left (area)
                     let bx: number, by: number;

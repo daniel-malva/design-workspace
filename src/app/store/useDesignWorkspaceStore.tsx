@@ -100,6 +100,8 @@ export interface CanvasComment {
   resolved: boolean;
   /** Threaded replies */
   replies?: CommentReply[];
+  /** Page this comment was created on */
+  pageId?: string;
   /** Single-element mode: ID of the canvas element */
   elementId?: string;
   /** Single-element mode: display name snapshotted at creation */
@@ -301,6 +303,7 @@ export interface DesignWorkspaceState {
     elementName?: string,
     selectionRect?: { x: number; y: number; width: number; height: number },
     selectionElementIds?: string[],
+    pageId?: string,
   ) => void;
   toggleCanvasCommentResolved: (id: string) => void;
   setHighlightedCommentId: (id: string | null) => void;
@@ -805,6 +808,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     elementName?: string,
     selectionRect?: { x: number; y: number; width: number; height: number },
     selectionElementIds?: string[],
+    pageId?: string,
   ) => {
     const comment: CanvasComment = {
       id:                   generateId(),
@@ -813,6 +817,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
       text:                 text.trim(),
       timestamp:            'just now',
       resolved:             false,
+      pageId,
       elementId,
       elementName,
       selectionRect,

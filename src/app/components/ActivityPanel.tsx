@@ -785,8 +785,9 @@ function CanvasCommentRow({
 
 function CommentsTab() {
   const {
-    canvasComments, highlightedCommentId,
+    canvasComments, highlightedCommentId, activePageId,
     toggleCanvasCommentResolved, setHighlightedCommentId, addCommentReply,
+    switchCanvasPage,
   } = useDesignWorkspace();
 
   const [filter, setFilter] = useState<CommentFilter>('all');
@@ -873,6 +874,11 @@ function CommentsTab() {
                     onToggleResolve={toggleCanvasCommentResolved}
                     addCommentReply={addCommentReply}
                     onClick={() => {
+                      // If the comment lives on a different page, pan there first.
+                      // switchCanvasPage triggers the smooth animated scroll in CanvasArea.
+                      if (comment.pageId && comment.pageId !== activePageId) {
+                        switchCanvasPage(comment.pageId);
+                      }
                       // Only set the highlight — do NOT call selectElement/setSelection.
                       // Selecting an element would trigger the Properties panel and hide
                       // the Comments tab (RightPanel hides ActivityPanel when selection > 0).
