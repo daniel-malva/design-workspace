@@ -2,7 +2,7 @@ import React, { useState, useContext, createContext, useCallback, useRef } from 
 
 // ─── Types ────────────────────────────────────────────────────────
 export type LeftRailItem =
-  | 'insert' | 'layers' | 'pages' | 'brandKit'
+  | 'insert' | 'layers' | 'brandKit'
   | 'configure' | 'export' | 'settings';
 
 export type CanvasElementType =
@@ -594,7 +594,7 @@ const defaultContextValue: DesignWorkspaceState = {
   selectedElementIds: [],
   selectedElementType: null,
   rightPanelForcedOpen: false,
-  activityPanelOpen: false,
+  activityPanelOpen: true,
   activityPanelTab: 'pages',
   isPreviewMode: false,
   isTimelineVisible: true,
@@ -702,7 +702,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   const [selectedElementType, setSelectedElementType] = useState<string | null>(null);
 
   const [rightPanelForcedOpen, setRightPanelForcedOpenState] = useState(false);
-  const [activityPanelOpen, setActivityPanelOpenState] = useState(false);
+  const [activityPanelOpen, setActivityPanelOpenState] = useState(true);
   const [activityPanelTab, setActivityPanelTabState] = useState<'pages' | 'eventLog' | 'comments'>('pages');
   const [isPreviewMode, setIsPreviewModeState] = useState(false);
   const [isTimelineVisible, setIsTimelineVisibleState] = useState(true);
