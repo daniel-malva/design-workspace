@@ -23,6 +23,7 @@ export function Timeline() {
     activePanel,
     selectedElementIds,
     activityPanelOpen,
+    isPreviewMode,
   } = useDesignWorkspace();
 
   const [isPlaying, setIsPlaying]       = useState(false);
@@ -60,8 +61,9 @@ export function Timeline() {
 
   const isLeftPaneVisible   = activePanel !== null && activePanel !== 'settings' && activePanel !== 'configure';
 
-  // Mirror the exact same 3-condition logic as RightPanel + CanvasArea
+  // Mirror the exact same logic as RightPanel + CanvasArea (including PreviewPanel)
   const isRightPanelVisible =
+    isPreviewMode ||
     activePanel === 'settings' ||
     activePanel === 'configure' ||
     selectedElementIds.length > 0 ||

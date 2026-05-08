@@ -936,11 +936,8 @@ export function PreviewPanel() {
 
   return (
     <div
-      className="absolute right-1 top-1 w-[268px] bg-white rounded-2xl z-20 flex flex-col overflow-hidden"
-      style={{
-        boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
-        maxHeight: 'calc(100% - 8px)',
-      }}
+      className="absolute right-1 top-1 bottom-1 w-[268px] bg-white rounded-2xl z-20 flex flex-col overflow-hidden"
+      style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.10)' }}
       onClick={e => e.stopPropagation()}
     >
       {view === 'advanced' ? (

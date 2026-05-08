@@ -86,6 +86,7 @@ export function CanvasArea() {
     canvasPages, activePageId, canvasElements,
     commentMode, canvasComments, highlightedCommentId,
     setCommentMode, addCanvasComment, setHighlightedCommentId, addCommentReply,
+    isPreviewMode,
   } = useDesignWorkspace();
 
   // Live refs so stable callbacks read current canvas dimensions
@@ -99,8 +100,10 @@ export function CanvasArea() {
     ? BREADCRUMB_LEFT_PANE_OPEN
     : BREADCRUMB_LEFT_PANE_CLOSED;
 
-  // RightPanel is visible under the same conditions as RightPanel.tsx
+  // RightPanel is visible under the same conditions as RightPanel.tsx,
+  // plus when PreviewPanel is open (isPreviewMode).
   const isRightPanelVisible =
+    isPreviewMode ||
     activePanel === 'settings' ||
     activePanel === 'configure' ||
     selectedElementIds.length > 0 ||
