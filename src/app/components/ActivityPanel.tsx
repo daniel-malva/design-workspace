@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Send, LayoutGrid, List, CheckCircle2, Circle, Plus, Check, X, CornerDownRight } from 'lucide-react';
+import { Send, LayoutGrid, List, CheckCircle2, Circle, Plus, Check, X, CornerDownRight, GripVertical } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { Separator } from './ui/separator';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
@@ -112,79 +112,81 @@ export function PagesTab() {
         <Separator className="m-0 shrink-0" />
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="grid grid-cols-2 gap-3 p-3">
-            {canvasPages.map(page => {
+          <div className="grid grid-cols-2 gap-2.5 p-3">
+            {canvasPages.map((page, idx) => {
               const isActive   = page.id === activePageId;
               const isRenaming = renamingId === page.id;
               const els        = getPageElements(page);
               return (
-                <div key={page.id} className="flex flex-col items-center gap-1.5">
-                  {/* Thumbnail button */}
-                  <button
-                    onClick={() => switchCanvasPage(page.id)}
-                    onDoubleClick={() => startRename(page.id, page.name)}
-                    className="w-full"
-                    title={page.name}
-                  >
-                    <div
-                      className="relative overflow-hidden transition-all w-full"
-                      style={{
-                        height:       thumbH,
-                        borderRadius: 6,
-                        borderWidth:  2,
-                        borderStyle:  'solid',
-                        borderColor:  isActive ? '#5B4EFF' : '#D8D8D8',
-                        boxShadow:    isActive ? '0 0 0 2px rgba(91,78,255,0.18)' : undefined,
-                      }}
-                    >
-                      <MiniCanvas
-                        elements={els}
-                        canvasW={canvasWidth}
-                        canvasH={canvasHeight}
-                        thumbW={thumbW - 4}
-                        thumbH={thumbH - 4}
-                      />
-                      {isActive && (
-                        <div className="absolute bottom-0 inset-x-0 bg-[#5B4EFF] py-0.5">
-                          <span className="block text-center text-[9px] text-white font-medium leading-none py-0.5">active</span>
-                        </div>
-                      )}
-                    </div>
-                  </button>
+                <button
+                  key={page.id}
+                  onClick={() => switchCanvasPage(page.id)}
+                  onDoubleClick={() => startRename(page.id, page.name)}
+                  title={page.name}
+                  className="w-full text-left transition-all rounded-xl overflow-hidden focus:outline-none"
+                  style={{
+                    backgroundColor: isActive ? 'rgba(91,78,255,0.09)' : 'rgba(91,78,255,0.04)',
+                    border: isActive ? '1.5px solid rgba(91,78,255,0.35)' : '1.5px solid transparent',
+                    boxShadow: isActive ? '0 0 0 2px rgba(91,78,255,0.12)' : undefined,
+                  }}
+                >
+                  {/* Card header row */}
+                  <div className="flex items-center gap-1 px-2 pt-2 pb-1.5">
+                    <GripVertical size={11} className="text-[#C5C2D0] shrink-0" />
+                    <span className="text-[10px] font-medium text-[#9c99a9] shrink-0">{idx + 1}</span>
+                    {isRenaming ? (
+                      <div className="flex items-center gap-0.5 flex-1 min-w-0" onClick={e => e.stopPropagation()}>
+                        <input
+                          ref={renameInputRef}
+                          value={renameValue}
+                          onChange={e => setRenameValue(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter')  { e.preventDefault(); commitRename(); }
+                            if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+                          }}
+                          onBlur={commitRename}
+                          className="flex-1 text-[10px] font-medium text-[#111111] bg-white border border-[#5B4EFF] rounded px-1 py-0 outline-none min-w-0"
+                          autoFocus
+                        />
+                        <button onMouseDown={e => { e.preventDefault(); commitRename(); }} className="text-[#5B4EFF] shrink-0">
+                          <Check size={9} />
+                        </button>
+                        <button onMouseDown={e => { e.preventDefault(); cancelRename(); }} className="text-[#9c99a9] shrink-0">
+                          <X size={9} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span
+                        className="text-[10px] font-semibold truncate flex-1 min-w-0"
+                        style={{ color: isActive ? '#5B4EFF' : '#5A5770' }}
+                        onDoubleClick={e => { e.stopPropagation(); startRename(page.id, page.name); }}
+                      >
+                        {page.name}
+                      </span>
+                    )}
+                  </div>
 
-                  {/* Inline rename or label */}
-                  {isRenaming ? (
-                    <div className="flex items-center gap-0.5 w-full">
-                      <input
-                        ref={renameInputRef}
-                        value={renameValue}
-                        onChange={e => setRenameValue(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter')  { e.preventDefault(); commitRename(); }
-                          if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
-                        }}
-                        onBlur={commitRename}
-                        className="flex-1 text-[10px] font-medium text-[#111111] bg-white border border-[#5B4EFF] rounded px-1 py-0.5 outline-none min-w-0"
-                        autoFocus
-                      />
-                      <button onMouseDown={e => { e.preventDefault(); commitRename(); }} className="text-[#5B4EFF] shrink-0">
-                        <Check size={10} />
-                      </button>
-                      <button onMouseDown={e => { e.preventDefault(); cancelRename(); }} className="text-[#9c99a9] shrink-0">
-                        <X size={10} />
-                      </button>
-                    </div>
-                  ) : (
-                    <span
-                      className="text-[10px] font-medium leading-none truncate w-full text-center cursor-text"
-                      style={{ color: isActive ? '#5B4EFF' : '#5A5770' }}
-                      onDoubleClick={() => startRename(page.id, page.name)}
-                      title="Double-click to rename"
-                    >
-                      {page.name}
-                    </span>
-                  )}
-                </div>
+                  {/* Mini canvas */}
+                  <div className="relative mx-2 mb-2 overflow-hidden bg-white rounded-lg"
+                    style={{ height: thumbH }}
+                  >
+                    <MiniCanvas
+                      elements={els}
+                      canvasW={canvasWidth}
+                      canvasH={canvasHeight}
+                      thumbW={thumbW - 4}
+                      thumbH={thumbH}
+                    />
+                    {/* "active" pill — top right */}
+                    {isActive && (
+                      <div className="absolute top-1.5 right-1.5">
+                        <span className="bg-[#5B4EFF] text-white text-[8px] font-semibold px-1.5 py-0.5 rounded-full leading-none">
+                          active
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </button>
               );
             })}
           </div>

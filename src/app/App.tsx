@@ -1,4 +1,4 @@
-import { DesignWorkspaceProvider, useDesignWorkspace } from './store/useDesignWorkspaceStore';
+import { DesignWorkspaceProvider } from './store/useDesignWorkspaceStore';
 import { LeftRail } from './components/LeftRail';
 import { LeftPane } from './components/LeftPane';
 import { CanvasArea } from './components/CanvasArea';
@@ -13,18 +13,13 @@ function DesignWorkspaceLayout() {
   useInsertMenuShortcuts();
   useCanvasKeyboardShortcuts();
 
-  const { isPreviewMode } = useDesignWorkspace();
-
   return (
     <div className="flex w-screen h-screen overflow-hidden">
       {/* Left Rail — always visible, fixed width */}
       <LeftRail />
 
       {/* Canvas region — all overlays live here as absolute children */}
-      <div
-        className="relative flex-1 overflow-hidden transition-colors duration-300 ease-in-out"
-        style={{ backgroundColor: isPreviewMode ? '#595959' : '#E8E8E8' }}
-      >
+      <div className="relative flex-1 overflow-hidden">
         {/* Infinite pan/zoom canvas */}
         <CanvasArea />
 

@@ -558,7 +558,10 @@ export function CanvasArea() {
   }
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-[#E8E8E8]">
+    <div
+      className="absolute inset-0 overflow-hidden transition-colors duration-300 ease-in-out"
+      style={{ backgroundColor: isPreviewMode ? '#595959' : '#E8E8E8' }}
+    >
       {/* Dot grid + pan/zoom surface — containerRef always mounted so
           ResizeObserver can measure dimensions even before canvas is shown */}
       <div
