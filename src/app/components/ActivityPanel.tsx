@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { Send, LayoutGrid, List, CheckCircle2, Circle, Plus, Check, X, CornerDownRight, GripVertical } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Send, LayoutGrid, List, CheckCircle2, Circle, Plus, Check, X, CornerDownRight, GripVertical, MoreHorizontal, Pencil, Copy, Trash2, PlusSquare, ChevronUp, ChevronDown } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { Separator } from './ui/separator';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
@@ -65,26 +65,91 @@ const TAB_CLS = `
 // TAB 1 — PAGES OVERVIEW  (template canvas pages)
 // ══════════════════════════════════════════════════════════════════
 
+// ── Kebab dropdown for each page card ──────────────────────────
+interface KebabMenuProps {
+  pageId: string;
+  pageIdx: number;
+  totalPages: number;
+  onRename: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  onAddAfter: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onClose: () => void;
+}
+
+function PageKebabMenu({
+  pageId, pageIdx, totalPages,
+  onRename, onDuplicate, onDelete, onAddAfter, onMoveUp, onMoveDown, onClose,
+}: KebabMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+    // slight delay so the same click that opened doesn't close it
+    const t = setTimeout(() => document.addEventListener('mousedown', handleOutside), 50);
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', handleOutside); };
+  }, [onClose]);
+
+  const item = (icon: React.ReactNode, label: string, action: () => void, danger = false, disabled = false) => (
+    <button
+      key={label}
+      onMouseDown={e => { e.preventDefault(); e.stopPropagation(); if (!disabled) { action(); onClose(); } }}
+      disabled={disabled}
+      className={`flex items-center gap-2 w-full px-3 py-1.5 text-left text-[12px] font-medium transition-colors
+        ${disabled ? 'opacity-30 cursor-not-allowed' :
+          danger ? 'text-red-500 hover:bg-red-50' : 'text-[#2d2a38] hover:bg-[rgba(91,78,255,0.07)]'}`}
+    >
+      <span className="w-3.5 flex items-center justify-center shrink-0">{icon}</span>
+      {label}
+    </button>
+  );
+
+  return (
+    <div
+      ref={menuRef}
+      className="absolute right-2 top-8 z-50 bg-white rounded-xl border border-[rgba(0,0,0,0.1)] shadow-lg overflow-hidden py-1 min-w-[160px]"
+      onClick={e => e.stopPropagation()}
+    >
+      {item(<Pencil size={12} />,    'Rename',          onRename)}
+      {item(<Copy size={12} />,      'Duplicate',       onDuplicate)}
+      {item(<PlusSquare size={12} />, 'Add canvas after', onAddAfter)}
+      <div className="my-1 h-px bg-[rgba(0,0,0,0.07)] mx-2" />
+      {item(<ChevronUp size={12} />,   'Move up',   onMoveUp,   false, pageIdx === 0)}
+      {item(<ChevronDown size={12} />, 'Move down', onMoveDown, false, pageIdx === totalPages - 1)}
+      <div className="my-1 h-px bg-[rgba(0,0,0,0.07)] mx-2" />
+      {item(<Trash2 size={12} />, 'Delete', onDelete, true, totalPages <= 1)}
+    </div>
+  );
+}
+
 export function PagesTab() {
   const {
     canvasPages, activePageId, canvasElements,
     switchCanvasPage, addCanvasPage, renameCanvasPage,
+    duplicateCanvasPage, deleteCanvasPage, reorderCanvasPages,
     canvasWidth, canvasHeight,
   } = useDesignWorkspace();
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renamingId, setRenamingId]   = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [kebabOpenId, setKebabOpenId] = useState<string | null>(null);
+  const [draggingId, setDraggingId]   = useState<string | null>(null);
+  const [dragOverId, setDragOverId]   = useState<string | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   // Thumbnail dimensions — preserve canvas aspect ratio
-  const GRID_W = 104;
-  const GRID_H = Math.max(52, Math.round(GRID_W * canvasHeight / canvasWidth));
-  const LIST_W = 52;
-  const LIST_H = Math.max(28, Math.round(LIST_W * canvasHeight / canvasWidth));
-
-  const thumbW = viewMode === 'grid' ? GRID_W : LIST_W;
-  const thumbH = viewMode === 'grid' ? GRID_H : LIST_H;
+  // Single-column layout: +~30% larger than original 2-col size
+  const GRID_W = 200;
+  const GRID_H = Math.max(100, Math.round(GRID_W * canvasHeight / canvasWidth));
+  const LIST_W = 56;
+  const LIST_H = Math.max(32, Math.round(LIST_W * canvasHeight / canvasWidth));
 
   function startRename(pageId: string, currentName: string) {
     setRenamingId(pageId);
@@ -99,9 +164,52 @@ export function PagesTab() {
 
   function cancelRename() { setRenamingId(null); }
 
-  // Get elements for a given page (active page uses live canvasElements for up-to-date thumbnail)
+  // Get elements for a given page
   function getPageElements(page: typeof canvasPages[0]) {
     return page.id === activePageId ? canvasElements : page.elementSnapshot;
+  }
+
+  // ── Drag-and-drop handlers ────────────────────────────────────
+  function handleDragStart(e: React.DragEvent, id: string) {
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggingId(id);
+  }
+  function handleDragOver(e: React.DragEvent, id: string) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (id !== dragOverId) setDragOverId(id);
+  }
+  function handleDrop(e: React.DragEvent, targetId: string) {
+    e.preventDefault();
+    if (!draggingId || draggingId === targetId) { reset(); return; }
+    const ids     = canvasPages.map(p => p.id);
+    const fromIdx = ids.indexOf(draggingId);
+    const toIdx   = ids.indexOf(targetId);
+    if (fromIdx === -1 || toIdx === -1) { reset(); return; }
+    const newIds = [...ids];
+    newIds.splice(fromIdx, 1);
+    newIds.splice(toIdx, 0, draggingId);
+    reorderCanvasPages(newIds);
+    reset();
+  }
+  function reset() { setDraggingId(null); setDragOverId(null); }
+
+  // ── Move up / down ────────────────────────────────────────────
+  function moveUp(pageId: string) {
+    const ids = canvasPages.map(p => p.id);
+    const idx = ids.indexOf(pageId);
+    if (idx <= 0) return;
+    const n = [...ids];
+    [n[idx - 1], n[idx]] = [n[idx], n[idx - 1]];
+    reorderCanvasPages(n);
+  }
+  function moveDown(pageId: string) {
+    const ids = canvasPages.map(p => p.id);
+    const idx = ids.indexOf(pageId);
+    if (idx >= ids.length - 1) return;
+    const n = [...ids];
+    [n[idx + 1], n[idx]] = [n[idx], n[idx + 1]];
+    reorderCanvasPages(n);
   }
 
   // ── Grid view ─────────────────────────────────────────────────
@@ -112,28 +220,47 @@ export function PagesTab() {
         <Separator className="m-0 shrink-0" />
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="grid grid-cols-2 gap-2.5 p-3">
+          <div className="flex flex-col gap-2.5 p-3">
             {canvasPages.map((page, idx) => {
               const isActive   = page.id === activePageId;
               const isRenaming = renamingId === page.id;
+              const isDragging = draggingId === page.id;
+              const isDragOver = dragOverId === page.id && draggingId !== page.id;
               const els        = getPageElements(page);
+
               return (
-                <button
+                <div
                   key={page.id}
-                  onClick={() => switchCanvasPage(page.id)}
-                  onDoubleClick={() => startRename(page.id, page.name)}
-                  title={page.name}
-                  className="w-full text-left transition-all rounded-xl overflow-hidden focus:outline-none"
+                  draggable
+                  onDragStart={e => handleDragStart(e, page.id)}
+                  onDragOver={e => handleDragOver(e, page.id)}
+                  onDrop={e => handleDrop(e, page.id)}
+                  onDragEnd={reset}
+                  className="relative w-full rounded-xl transition-all"
                   style={{
                     backgroundColor: isActive ? 'rgba(91,78,255,0.09)' : 'rgba(91,78,255,0.04)',
-                    border: isActive ? '1.5px solid rgba(91,78,255,0.35)' : '1.5px solid transparent',
-                    boxShadow: isActive ? '0 0 0 2px rgba(91,78,255,0.12)' : undefined,
+                    border: isDragOver
+                      ? '1.5px solid #5B4EFF'
+                      : isActive
+                        ? '1.5px solid rgba(91,78,255,0.35)'
+                        : '1.5px solid transparent',
+                    boxShadow: isDragOver
+                      ? '0 0 0 3px rgba(91,78,255,0.18)'
+                      : isActive
+                        ? '0 0 0 2px rgba(91,78,255,0.12)'
+                        : undefined,
+                    opacity: isDragging ? 0.4 : 1,
+                    cursor: 'default',
                   }}
                 >
-                  {/* Card header row */}
-                  <div className="flex items-center gap-1 px-2 pt-2 pb-1.5">
-                    <GripVertical size={11} className="text-[#C5C2D0] shrink-0" />
-                    <span className="text-[10px] font-medium text-[#9c99a9] shrink-0">{idx + 1}</span>
+                  {/* ── Card header row ── */}
+                  <div className="flex items-center gap-1.5 px-2.5 pt-2.5 pb-2">
+                    <GripVertical
+                      size={13}
+                      className="text-[#C5C2D0] shrink-0 cursor-grab active:cursor-grabbing"
+                    />
+                    <span className="text-[10px] font-medium text-[#9c99a9] shrink-0 w-4 text-right">{idx + 1}</span>
+
                     {isRenaming ? (
                       <div className="flex items-center gap-0.5 flex-1 min-w-0" onClick={e => e.stopPropagation()}>
                         <input
@@ -145,39 +272,73 @@ export function PagesTab() {
                             if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
                           }}
                           onBlur={commitRename}
-                          className="flex-1 text-[10px] font-medium text-[#111111] bg-white border border-[#5B4EFF] rounded px-1 py-0 outline-none min-w-0"
+                          className="flex-1 text-[11px] font-medium text-[#111111] bg-white border border-[#5B4EFF] rounded px-1.5 py-0 outline-none min-w-0"
                           autoFocus
                         />
                         <button onMouseDown={e => { e.preventDefault(); commitRename(); }} className="text-[#5B4EFF] shrink-0">
-                          <Check size={9} />
+                          <Check size={10} />
                         </button>
                         <button onMouseDown={e => { e.preventDefault(); cancelRename(); }} className="text-[#9c99a9] shrink-0">
-                          <X size={9} />
+                          <X size={10} />
                         </button>
                       </div>
                     ) : (
                       <span
-                        className="text-[10px] font-semibold truncate flex-1 min-w-0"
+                        className="text-[11px] font-semibold truncate flex-1 min-w-0"
                         style={{ color: isActive ? '#5B4EFF' : '#5A5770' }}
                         onDoubleClick={e => { e.stopPropagation(); startRename(page.id, page.name); }}
                       >
                         {page.name}
                       </span>
                     )}
+
+                    {/* Kebab trigger */}
+                    <button
+                      onMouseDown={e => { e.stopPropagation(); setKebabOpenId(kebabOpenId === page.id ? null : page.id); }}
+                      className="shrink-0 w-5 h-5 flex items-center justify-center rounded-md text-[#B0AEC0] hover:text-[#5A5770] hover:bg-[rgba(0,0,0,0.07)] transition-colors"
+                      title="Page options"
+                    >
+                      <MoreHorizontal size={13} />
+                    </button>
                   </div>
 
-                  {/* Mini canvas */}
-                  <div className="relative mx-2 mb-2 overflow-hidden bg-white rounded-lg"
-                    style={{ height: thumbH }}
+                  {/* Kebab dropdown */}
+                  {kebabOpenId === page.id && (
+                    <PageKebabMenu
+                      pageId={page.id}
+                      pageIdx={idx}
+                      totalPages={canvasPages.length}
+                      onRename={() => startRename(page.id, page.name)}
+                      onDuplicate={() => duplicateCanvasPage(page.id)}
+                      onDelete={() => deleteCanvasPage(page.id)}
+                      onAddAfter={() => {
+                        // Add page, then reorder it to appear after current
+                        addCanvasPage();
+                      }}
+                      onMoveUp={() => moveUp(page.id)}
+                      onMoveDown={() => moveDown(page.id)}
+                      onClose={() => setKebabOpenId(null)}
+                    />
+                  )}
+
+                  {/* ── Mini canvas — clickable area ── */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => switchCanvasPage(page.id)}
+                    onDoubleClick={() => startRename(page.id, page.name)}
+                    onKeyDown={e => e.key === 'Enter' && switchCanvasPage(page.id)}
+                    className="mx-2.5 mb-2.5 overflow-hidden bg-white rounded-lg cursor-pointer relative"
+                    style={{ height: GRID_H }}
                   >
                     <MiniCanvas
                       elements={els}
                       canvasW={canvasWidth}
                       canvasH={canvasHeight}
-                      thumbW={thumbW - 4}
-                      thumbH={thumbH}
+                      thumbW={GRID_W}
+                      thumbH={GRID_H}
                     />
-                    {/* "active" pill — top right */}
+                    {/* "active" pill */}
                     {isActive && (
                       <div className="absolute top-1.5 right-1.5">
                         <span className="bg-[#5B4EFF] text-white text-[8px] font-semibold px-1.5 py-0.5 rounded-full leading-none">
@@ -186,7 +347,7 @@ export function PagesTab() {
                       </div>
                     )}
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -202,77 +363,116 @@ export function PagesTab() {
       <Separator className="m-0 shrink-0" />
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        {canvasPages.map(page => {
+        {canvasPages.map((page, idx) => {
           const isActive   = page.id === activePageId;
           const isRenaming = renamingId === page.id;
+          const isDragging = draggingId === page.id;
+          const isDragOver = dragOverId === page.id && draggingId !== page.id;
           const els        = getPageElements(page);
           return (
-            <div key={page.id}>
-              <button
+            <div
+              key={page.id}
+              draggable
+              onDragStart={e => handleDragStart(e, page.id)}
+              onDragOver={e => handleDragOver(e, page.id)}
+              onDrop={e => handleDrop(e, page.id)}
+              onDragEnd={reset}
+              className={`group relative flex items-center gap-3 w-full px-3 py-2 transition-colors ${
+                isDragOver ? 'bg-[rgba(91,78,255,0.08)] ring-1 ring-inset ring-[rgba(91,78,255,0.25)]' :
+                isActive   ? 'bg-[rgba(91,78,255,0.06)]' : 'hover:bg-gray-50'
+              }`}
+              style={{ opacity: isDragging ? 0.4 : 1 }}
+            >
+              <GripVertical size={13} className="text-[#C5C2D0] shrink-0 cursor-grab active:cursor-grabbing" />
+
+              {/* Thumbnail */}
+              <div
+                className="relative overflow-hidden shrink-0"
+                style={{
+                  width: LIST_W, height: LIST_H,
+                  borderRadius: 5,
+                  border: `2px solid ${isActive ? '#5B4EFF' : '#D8D8D8'}`,
+                }}
+              >
+                <MiniCanvas
+                  elements={els}
+                  canvasW={canvasWidth}
+                  canvasH={canvasHeight}
+                  thumbW={LIST_W - 4}
+                  thumbH={LIST_H - 4}
+                />
+              </div>
+
+              {/* Name */}
+              <div
+                className="flex-1 min-w-0 cursor-pointer"
                 onClick={() => switchCanvasPage(page.id)}
                 onDoubleClick={() => startRename(page.id, page.name)}
-                className={`flex items-center gap-3 w-full px-3 py-2 transition-colors text-left ${
-                  isActive ? 'bg-[rgba(91,78,255,0.06)]' : 'hover:bg-gray-50'
-                }`}
               >
-                {/* Thumbnail */}
-                <div
-                  className="relative overflow-hidden shrink-0"
-                  style={{
-                    width: LIST_W, height: LIST_H,
-                    borderRadius: 4,
-                    borderWidth:  2,
-                    borderStyle:  'solid',
-                    borderColor:  isActive ? '#5B4EFF' : '#D8D8D8',
-                  }}
-                >
-                  <MiniCanvas
-                    elements={els}
-                    canvasW={canvasWidth}
-                    canvasH={canvasHeight}
-                    thumbW={LIST_W - 4}
-                    thumbH={LIST_H - 4}
-                  />
-                </div>
-
-                {/* Name — inline rename or label */}
-                <div className="flex-1 min-w-0">
-                  {isRenaming ? (
-                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                      <input
-                        ref={renameInputRef}
-                        value={renameValue}
-                        onChange={e => setRenameValue(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter')  { e.preventDefault(); commitRename(); }
-                          if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
-                        }}
-                        onBlur={commitRename}
-                        className="flex-1 text-[12px] font-medium text-[#111111] bg-white border border-[#5B4EFF] rounded px-1.5 py-0.5 outline-none min-w-0"
-                        autoFocus
-                      />
-                      <button onMouseDown={e => { e.preventDefault(); commitRename(); }} className="text-[#5B4EFF]">
-                        <Check size={11} />
-                      </button>
-                      <button onMouseDown={e => { e.preventDefault(); cancelRename(); }} className="text-[#9c99a9]">
-                        <X size={11} />
-                      </button>
-                    </div>
-                  ) : (
-                    <span
-                      className="text-[12px] font-medium truncate block"
-                      style={{ color: isActive ? '#5B4EFF' : '#1f1d25' }}
-                    >
-                      {page.name}
-                    </span>
-                  )}
-                </div>
-
-                {/* Active dot */}
-                {isActive && !isRenaming && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#5B4EFF] shrink-0" />
+                {isRenaming ? (
+                  <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                    <input
+                      ref={renameInputRef}
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter')  { e.preventDefault(); commitRename(); }
+                        if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+                      }}
+                      onBlur={commitRename}
+                      className="flex-1 text-[12px] font-medium text-[#111111] bg-white border border-[#5B4EFF] rounded px-1.5 py-0.5 outline-none min-w-0"
+                      autoFocus
+                    />
+                    <button onMouseDown={e => { e.preventDefault(); commitRename(); }} className="text-[#5B4EFF]">
+                      <Check size={11} />
+                    </button>
+                    <button onMouseDown={e => { e.preventDefault(); cancelRename(); }} className="text-[#9c99a9]">
+                      <X size={11} />
+                    </button>
+                  </div>
+                ) : (
+                  <span
+                    className="text-[12px] font-medium truncate block"
+                    style={{ color: isActive ? '#5B4EFF' : '#1f1d25' }}
+                  >
+                    {page.name}
+                  </span>
                 )}
-              </button>
+              </div>
+
+              {/* Kebab trigger — visible on hover */}
+              <div className="relative shrink-0">
+                <button
+                  onMouseDown={e => { e.stopPropagation(); setKebabOpenId(kebabOpenId === page.id ? null : page.id); }}
+                  className={`w-6 h-6 flex items-center justify-center rounded-md text-[#B0AEC0] hover:text-[#5A5770] hover:bg-[rgba(0,0,0,0.07)] transition-all ${
+                    kebabOpenId === page.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                  title="Page options"
+                >
+                  <MoreHorizontal size={13} />
+                </button>
+                {kebabOpenId === page.id && (
+                  <div className="absolute right-0 top-6 z-50">
+                    <PageKebabMenu
+                      pageId={page.id}
+                      pageIdx={idx}
+                      totalPages={canvasPages.length}
+                      onRename={() => startRename(page.id, page.name)}
+                      onDuplicate={() => duplicateCanvasPage(page.id)}
+                      onDelete={() => deleteCanvasPage(page.id)}
+                      onAddAfter={() => addCanvasPage()}
+                      onMoveUp={() => moveUp(page.id)}
+                      onMoveDown={() => moveDown(page.id)}
+                      onClose={() => setKebabOpenId(null)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Active dot */}
+              {isActive && !isRenaming && (
+                <div className="w-1.5 h-1.5 rounded-full bg-[#5B4EFF] shrink-0" />
+              )}
             </div>
           );
         })}

@@ -288,6 +288,8 @@ export interface DesignWorkspaceState {
   deleteCanvasPage: (pageId: string) => void;
   /** Rename a canvas page */
   renameCanvasPage: (pageId: string, name: string) => void;
+  /** Reorder canvas pages by providing a new ordered list of page IDs */
+  reorderCanvasPages: (pageIds: string[]) => void;
 
   // ── Comment mode ─────────────────────────────────────────────────
   /** Whether the canvas is in comment-placement mode (activated by pressing C) */
@@ -649,6 +651,7 @@ const defaultContextValue: DesignWorkspaceState = {
   duplicateCanvasPage: noop,
   deleteCanvasPage: noop,
   renameCanvasPage: noop,
+  reorderCanvasPages: noop,
   commentMode: false,
   canvasComments: [],
   highlightedCommentId: null,
@@ -2119,6 +2122,13 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     if (!trimmed) return;
     setCanvasPages(prev => prev.map(p => p.id === pageId ? { ...p, name: trimmed } : p));
   }, []);
+
+  const reorderCanvasPages = useCallback((pageIds: string[]) => {
+    setCanvasPages(prev => {
+      const map = new Map(prev.map(p => [p.id, p]));
+      return pageIds.map(id => map.get(id)).filter(Boolean) as typeof prev;
+    });
+  }, []);
   const setRightPanelForcedOpen = useCallback((v: boolean) => setRightPanelForcedOpenState(v), []);
   const setActivityPanelOpen = useCallback((v: boolean) => setActivityPanelOpenState(v), []);
   const setActivityPanelTab  = useCallback((tab: 'pages' | 'eventLog' | 'comments') => setActivityPanelTabState(tab), []);
@@ -2263,7 +2273,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setActivePanel, setActiveInsertItem,
     setIsPreviewMode, setIsTimelineVisible, setIsTimelineExpanded, setAudioPlaceholderInTimeline,
     setActivePageId,
-    switchCanvasPage, addCanvasPage, duplicateCanvasPage, deleteCanvasPage, renameCanvasPage,
+    switchCanvasPage, addCanvasPage, duplicateCanvasPage, deleteCanvasPage, renameCanvasPage, reorderCanvasPages,
     commentMode, canvasComments, highlightedCommentId,
     setCommentMode, addCanvasComment, toggleCanvasCommentResolved, setHighlightedCommentId, addCommentReply,
     setLayerVisibility, setLayerLocked, setLayerName,
