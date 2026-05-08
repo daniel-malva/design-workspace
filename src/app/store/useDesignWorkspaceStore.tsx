@@ -1,5 +1,4 @@
 import React, { useState, useContext, createContext, useCallback, useRef } from 'react';
-import { getCurrentUser } from '../hooks/useCurrentUser';
 
 // ─── Types ────────────────────────────────────────────────────────
 export type LeftRailItem =
@@ -80,15 +79,6 @@ export interface CanvasPage {
   name: string;
   /** Snapshot of this page's elements — updated when navigating away, used for thumbnails */
   elementSnapshot: CanvasElement[];
-}
-
-/** A single entry in the event log (real user action). */
-export interface EventLogEntry {
-  id: string;
-  action: string;
-  category: string;
-  categoryColor: string;
-  timestamp: number; // Date.now()
 }
 
 /** A single reply inside a comment thread. */
@@ -298,8 +288,6 @@ export interface DesignWorkspaceState {
   deleteCanvasPage: (pageId: string) => void;
   /** Rename a canvas page */
   renameCanvasPage: (pageId: string, name: string) => void;
-  /** Move a canvas page from one index to another (drag-to-reorder / Move Up / Move Down) */
-  moveCanvasPage: (fromIndex: number, toIndex: number) => void;
 
   // ── Comment mode ─────────────────────────────────────────────────
   /** Whether the canvas is in comment-placement mode (activated by pressing C) */
@@ -320,10 +308,6 @@ export interface DesignWorkspaceState {
   toggleCanvasCommentResolved: (id: string) => void;
   setHighlightedCommentId: (id: string | null) => void;
   addCommentReply: (commentId: string, text: string) => void;
-
-  // ── Event log ─────────────────────────────────────────────────────
-  eventLog: EventLogEntry[];
-  addEventLogEntry: (action: string, category: string, categoryColor: string) => void;
 
   setLayerVisibility: (id: string, visible: boolean) => void;
   setLayerLocked: (id: string, locked: boolean) => void;
@@ -383,13 +367,6 @@ export interface FeedVariant {
   rowIndex:   number;
   rowData:    Record<string, string>;
   isDetached: boolean;
-  /**
-   * Multi-page snapshots keyed by pageId.
-   * Contains substituted elements/layers for every canvas page.
-   */
-  pageSnapshots: Record<string, { elements: CanvasElement[]; layers: Layer[] }>;
-  /** Current-page view — always reflects the page that is currently displayed.
-   *  Kept for backward compat with ConfigurePanel readers. */
   elements:   CanvasElement[];
   layers:     Layer[];
 }
@@ -669,7 +646,6 @@ const defaultContextValue: DesignWorkspaceState = {
   duplicateCanvasPage: noop,
   deleteCanvasPage: noop,
   renameCanvasPage: noop,
-  moveCanvasPage: noop,
   commentMode: false,
   canvasComments: [],
   highlightedCommentId: null,
@@ -678,8 +654,6 @@ const defaultContextValue: DesignWorkspaceState = {
   toggleCanvasCommentResolved: noop,
   setHighlightedCommentId: noop,
   addCommentReply: noop,
-  eventLog: [],
-  addEventLogEntry: noop,
   setLayerVisibility: noop,
   setLayerLocked: noop,
   setLayerName: noop,
@@ -836,11 +810,10 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     selectionElementIds?: string[],
     pageId?: string,
   ) => {
-    const { initials: authorInitials, color: authorColor } = getCurrentUser();
     const comment: CanvasComment = {
       id:                   generateId(),
-      authorInitials,
-      authorColor,
+      authorInitials:       'LM',
+      authorColor:          '#7BB3E0',
       text:                 text.trim(),
       timestamp:            'just now',
       resolved:             false,
@@ -852,8 +825,6 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
       selectionElementCount: selectionElementIds?.length,
     };
     setCanvasComments(prev => [comment, ...prev]);
-    const preview = text.trim().length > 32 ? text.trim().slice(0, 32) + '…' : text.trim();
-    addEventLogEntryRef.current(`Comment · "${preview}"`, 'Comment', '#5B4EFF');
   }, []);
 
   const toggleCanvasCommentResolved = useCallback((id: string) => {
@@ -865,11 +836,10 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   }, []);
 
   const addCommentReply = useCallback((commentId: string, text: string) => {
-    const { initials: replyInitials, color: replyColor } = getCurrentUser();
     const reply: CommentReply = {
       id:             generateId(),
-      authorInitials: replyInitials,
-      authorColor:    replyColor,
+      authorInitials: 'LM',
+      authorColor:    '#7BB3E0',
       text:           text.trim(),
       timestamp:      'just now',
     };
@@ -877,24 +847,6 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
       c.id === commentId ? { ...c, replies: [...(c.replies ?? []), reply] } : c
     ));
   }, []);
-
-  // ── Event log ─────────────────────────────────────────────────────
-  const [eventLog, setEventLog] = useState<EventLogEntry[]>([]);
-
-  const addEventLogEntry = useCallback((action: string, category: string, categoryColor: string) => {
-    const entry: EventLogEntry = {
-      id:            generateId(),
-      action,
-      category,
-      categoryColor,
-      timestamp:     Date.now(),
-    };
-    setEventLog(prev => [entry, ...prev].slice(0, 200));
-  }, []);
-
-  // Stable ref so callbacks with [] deps can always log without stale-closure issues
-  const addEventLogEntryRef = useRef(addEventLogEntry);
-  addEventLogEntryRef.current = addEventLogEntry;
 
   function typeForId(id: string): string | null {
     return canvasElementsRef.current.find(el => el.id === id)?.type ?? null;
@@ -1057,19 +1009,6 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     ]);
     setSelectedElementIds([id]);
     setSelectedElementType(element.type);
-
-    // Event log
-    {
-      let logCat   = 'Layer';
-      let logColor = '#6B7280';
-      if (element.type.startsWith('text')) {
-        logCat = 'Text'; logColor = '#F59E0B';
-      } else if (element.type.startsWith('placeholder-')) {
-        if (isLogoVariant(variant)) { logCat = 'Component'; logColor = '#10B981'; }
-        else { logCat = 'Image'; logColor = '#EC4899'; }
-      }
-      addEventLogEntryRef.current(`Added · ${name}`, logCat, logColor);
-    }
   }, []);
 
   const insertElementSilent = useCallback((element: Omit<CanvasElement, 'id'>) => {
@@ -1175,16 +1114,6 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
 
   const deleteElement = useCallback((id: string) => {
     takeSnapshotRef.current();        // ← snapshot BEFORE delete
-
-    // Log BEFORE elements are removed (while we can still look up the name)
-    const deletedEl = canvasElementsRef.current.find(el => el.id === id);
-    if (deletedEl) {
-      addEventLogEntryRef.current(
-        `Deleted · ${deletedEl.name ?? deletedEl.type}`,
-        'Layer', '#6B7280',
-      );
-    }
-
     // Track whether a group container was removed so we can clear editingGroupId
     let removedGroupId: string | null = null;
 
@@ -1540,106 +1469,51 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   );
 
   // ── Feed variant actions ───────────────────────────────────────
-
-  /**
-   * Helper: build a map of { pageId → {elements, layers} } representing the
-   * current MASTER state of every canvas page.
-   * – Active page comes from canvasElementsRef (or masterElements if on variant).
-   * – Other pages come from canvasPageDataRef (never touched while on variants).
-   */
-  function buildMasterPageData(isMaster: boolean) {
-    const activePageId = activePageIdRef.current;
-    const allPages     = canvasPagesRef.current;
-    const result: Record<string, { elements: CanvasElement[]; layers: Layer[] }> = {};
-    for (const page of allPages) {
-      if (page.id === activePageId) {
-        if (isMaster) {
-          result[page.id] = {
-            elements: canvasElementsRef.current,
-            layers:   layersRef.current,
-          };
-        } else {
-          // On a variant: canvasElementsRef has variant data (not master).
-          // Use canvasPageDataRef for the active page — it always has the master snapshot
-          // saved during master-mode navigation (or when we entered the variant).
-          // This fixes a bug where switching canvas pages on a variant re-triggers
-          // generateVariants, but masterElementsRef still held the ENTRY page's data,
-          // causing the newly-active page's snapshot to be built from the wrong elements.
-          const pd = canvasPageDataRef.current.get(page.id);
-          if (pd) {
-            result[page.id] = { elements: pd.elements, layers: pd.layers };
-          } else {
-            // Fallback: initial 'page-1' may not be in canvasPageDataRef yet
-            // (it's only written to canvasPageDataRef when navigating away from it).
-            // masterElementsRef is always set to the entry page's master when entering
-            // a variant, so it is correct as long as we haven't switched canvas pages.
-            result[page.id] = {
-              elements: masterElementsRef.current.length > 0 ? masterElementsRef.current : canvasElementsRef.current,
-              layers:   masterLayersRef.current.length  > 0 ? masterLayersRef.current  : layersRef.current,
-            };
-          }
-        }
-      } else {
-        const pd = canvasPageDataRef.current.get(page.id);
-        result[page.id] = pd
-          ? { elements: pd.elements, layers: pd.layers }
-          : { elements: [], layers: [] };
-      }
-    }
-    return result;
-  }
-
   const generateVariants = useCallback((
     rows: Record<string, string>[],
     columnMapping: Record<string, string>,
   ) => {
-    const isMaster      = activeVariantIdRef.current === null;
-    const activePageId  = activePageIdRef.current;
-    const mediaColMap   = feedStateRef.current.mediaColMap;
+    // Use master elements as the source — if we're on a variant, fall back to stored master
+    const isMaster     = activeVariantIdRef.current === null;
+    const sourceEls    = isMaster
+      ? canvasElementsRef.current
+      : (masterElementsRef.current.length > 0 ? masterElementsRef.current : canvasElementsRef.current);
+    const sourceLayers = isMaster
+      ? layersRef.current
+      : (masterLayersRef.current.length  > 0 ? masterLayersRef.current  : layersRef.current);
+
+    setMasterElements([...sourceEls]);
+    setMasterLayers([...sourceLayers]);
+
+    // Reuse existing IDs by row index so activeVariantId stays valid across re-generations
+    // (e.g. when column mapping updates after auto-match fires).
     const existing      = variantsRef.current;
     const currVariantId = activeVariantIdRef.current;
 
-    // Collect master data for every page
-    const masterPageData = buildMasterPageData(isMaster);
-
-    // Persist single-page master refs (backward compat)
-    const activeMaster = masterPageData[activePageId];
-    setMasterElements([...activeMaster.elements]);
-    setMasterLayers([...activeMaster.layers]);
-
-    // Create variants — each one contains substituted snapshots for ALL pages
-    const newVariants: FeedVariant[] = rows.map((rowData, i) => {
-      const pageSnapshots: Record<string, { elements: CanvasElement[]; layers: Layer[] }> = {};
-      for (const [pid, { elements, layers }] of Object.entries(masterPageData)) {
-        pageSnapshots[pid] = {
-          elements: substituteRowInElements(elements, rowData, columnMapping, mediaColMap),
-          layers:   [...layers],
-        };
-      }
-      const activeSnap = pageSnapshots[activePageId] ?? { elements: [], layers: [] };
-      return {
-        id:            existing[i]?.id ?? generateId(),
-        name:          `Row ${i + 1}`,
-        rowIndex:      i,
-        rowData,
-        isDetached:    false,
-        pageSnapshots,
-        elements:      activeSnap.elements,
-        layers:        activeSnap.layers,
-      };
-    });
+    const mediaColMap = feedStateRef.current.mediaColMap;
+    const newVariants: FeedVariant[] = rows.map((rowData, i) => ({
+      id:         existing[i]?.id ?? generateId(),
+      name:       `Row ${i + 1}`,
+      rowIndex:   i,
+      rowData,
+      isDetached: false,
+      elements:   substituteRowInElements(sourceEls, rowData, columnMapping, mediaColMap),
+      layers:     [...sourceLayers],
+    }));
 
     setVariants(newVariants);
 
     if (!isMaster) {
+      // Stay on current variant if it still exists (same ID reused above).
       const stillExists = newVariants.find(v => v.id === currVariantId);
       if (stillExists) {
-        const snap = stillExists.pageSnapshots[activePageId] ?? { elements: [], layers: [] };
-        setCanvasElements([...snap.elements]);
-        setLayers([...snap.layers]);
+        // Update canvas to reflect the new substitution without changing pages.
+        setCanvasElements([...stillExists.elements]);
+        setLayers([...stillExists.layers]);
       } else {
-        setCanvasElements([...activeMaster.elements]);
-        setLayers([...activeMaster.layers]);
+        // Row no longer exists (feed shrunk) — fall back to master.
+        setCanvasElements([...sourceEls]);
+        setLayers([...sourceLayers]);
         setActiveVariantIdState(null);
       }
     }
@@ -1649,7 +1523,6 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setHistory([]);
     setFuture([]);
     pageHistoryRef.current.clear();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const switchToPage = useCallback((variantId: string | null) => {
@@ -1660,100 +1533,58 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     const currLayers   = layersRef.current;
     const colMap       = feedStateRef.current.columnMapping;
     const mediaColMap  = feedStateRef.current.mediaColMap;
-    const activePageId = activePageIdRef.current;
 
-    // ── Determine what to load (for the currently-visible canvas page) ─
+    // ── Determine what to load ─────────────────────────────────
     let loadElements: CanvasElement[];
     let loadLayers:   Layer[];
 
     if (variantId === null) {
-      // Going back to master — restore the active page's master snapshot
+      // Going to master
       loadElements = [...masterElementsRef.current];
       loadLayers   = [...masterLayersRef.current];
     } else {
       const variant = variantsRef.current.find(v => v.id === variantId);
       if (!variant) return;
 
-      // Prefer the stored per-page snapshot; fall back to re-substitution
-      const snap = variant.pageSnapshots?.[activePageId];
-      if (snap) {
-        loadElements = [...snap.elements];
-        loadLayers   = [...snap.layers];
-      } else if (!variant.isDetached) {
+      if (!variant.isDetached) {
+        // Re-substitute from the current master
         const masterEls = currVariantId === null ? currElements : masterElementsRef.current;
         const masterLs  = currVariantId === null ? currLayers   : masterLayersRef.current;
         loadElements = substituteRowInElements(masterEls, variant.rowData, colMap, mediaColMap);
         loadLayers   = [...masterLs];
       } else {
-        // Detached old-style variant (no pageSnapshots) — use flat elements
         loadElements = [...variant.elements];
         loadLayers   = [...variant.layers];
       }
     }
 
-    // ── Save current state ─────────────────────────────────────
+    // ── Save current page ──────────────────────────────────────
     if (currVariantId === null) {
-      // Leaving master → collect ALL pages and propagate to non-detached variants
-      const masterPageData = buildMasterPageData(true);
-      // Persist ALL pages' master data into canvasPageDataRef AND into each
-      // page's elementSnapshot so that:
-      //  1. buildMasterPageData(false) can retrieve the correct elements for any
-      //     page — even initial 'page-1' which is not written to canvasPageDataRef
-      //     until the user explicitly navigates away from it on master.
-      //  2. sourceElements in useConfigureVariables always sees the latest master
-      //     variables via page.elementSnapshot, preventing the columnMapping
-      //     cleanup effect from removing variables that "appear" to be missing
-      //     because elementSnapshot was stale (e.g. a new {variable} added on
-      //     master after the last saveCurrentPageData call).
-      for (const [pid, { elements, layers }] of Object.entries(masterPageData)) {
-        const existing = canvasPageDataRef.current.get(pid);
-        canvasPageDataRef.current.set(pid, {
-          elements: [...elements],
-          layers:   [...layers],
-          history:  existing?.history ?? [],
-          future:   existing?.future  ?? [],
-        });
-      }
-      // Mirror the snapshot update into React state so useConfigureVariables
-      // and the Pages-panel thumbnails read fresh master data.
-      setCanvasPages(prev => prev.map(p => {
-        const d = masterPageData[p.id];
-        return d ? { ...p, elementSnapshot: [...d.elements] } : p;
-      }));
+      // Leaving master: snapshot + propagate edits to all non-detached variants
       setMasterElements([...currElements]);
       setMasterLayers([...currLayers]);
       setVariants(prev => prev.map(v => {
         if (v.isDetached) return v;
-        const newSnapshots: Record<string, { elements: CanvasElement[]; layers: Layer[] }> = {};
-        for (const [pid, { elements, layers }] of Object.entries(masterPageData)) {
-          newSnapshots[pid] = {
-            elements: substituteRowInElements(elements, v.rowData, colMap, mediaColMap),
-            layers:   [...layers],
-          };
-        }
-        const activeSnap = newSnapshots[activePageId] ?? { elements: [], layers: [] };
-        return { ...v, pageSnapshots: newSnapshots, elements: activeSnap.elements, layers: activeSnap.layers };
+        return {
+          ...v,
+          elements: substituteRowInElements(currElements, v.rowData, colMap, mediaColMap),
+          layers:   [...currLayers],
+        };
       }));
     } else if (variantDirtyRef.current) {
-      // Leaving a modified variant → save current page back into its snapshot
+      // Leaving a modified variant: save back + mark detached
       setVariants(prev => prev.map(v =>
         v.id === currVariantId
-          ? {
-              ...v,
-              elements: [...currElements],
-              layers:   [...currLayers],
-              isDetached: true,
-              pageSnapshots: {
-                ...v.pageSnapshots,
-                [activePageId]: { elements: [...currElements], layers: [...currLayers] },
-              },
-            }
+          ? { ...v, elements: [...currElements], layers: [...currLayers], isDetached: true }
           : v
       ));
     }
 
-    // ── History ────────────────────────────────────────────────
-    pageHistoryRef.current.set(currVariantId, { h: historyRef.current, f: futureRef.current });
+    // ── Save outgoing page history, restore incoming page history ─
+    pageHistoryRef.current.set(currVariantId, {
+      h: historyRef.current,
+      f: futureRef.current,
+    });
     const incoming = pageHistoryRef.current.get(variantId) ?? { h: [], f: [] };
 
     // ── Load target ────────────────────────────────────────────
@@ -1766,7 +1597,6 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setEditingGroupId(null);
     setHistory(incoming.h);
     setFuture(incoming.f);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const clearVariants = useCallback(() => {
@@ -1796,45 +1626,25 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     columnName: string,
     newValue:   string,
   ) => {
-    const colMap      = feedStateRef.current.columnMapping;
+    const colMap     = feedStateRef.current.columnMapping;
     const mediaColMap = feedStateRef.current.mediaColMap;
-    const activePageId = activePageIdRef.current;
-    const currVariant  = variantsRef.current.find(v => v.id === variantId);
+    const masterEls  = masterElementsRef.current.length > 0
+      ? masterElementsRef.current
+      : canvasElementsRef.current;
+    const currVariant = variantsRef.current.find(v => v.id === variantId);
     if (!currVariant) return;
 
-    const updatedRowData = { ...currVariant.rowData, [columnName]: newValue };
-
-    // Re-substitute ALL pages using master data for each page
-    const allPages = canvasPagesRef.current;
-    const newPageSnapshots: Record<string, { elements: CanvasElement[]; layers: Layer[] }> = {};
-    for (const page of allPages) {
-      let masterEls: CanvasElement[];
-      let masterLys: Layer[];
-      if (page.id === activePageId) {
-        masterEls = masterElementsRef.current.length > 0 ? masterElementsRef.current : canvasElementsRef.current;
-        masterLys = masterLayersRef.current.length  > 0 ? masterLayersRef.current  : layersRef.current;
-      } else {
-        const pd  = canvasPageDataRef.current.get(page.id);
-        masterEls = pd?.elements ?? [];
-        masterLys = pd?.layers   ?? [];
-      }
-      newPageSnapshots[page.id] = {
-        elements: substituteRowInElements(masterEls, updatedRowData, colMap, mediaColMap),
-        layers:   [...masterLys],
-      };
-    }
-
-    const activeSnap = newPageSnapshots[activePageId] ?? { elements: [], layers: [] };
+    const updatedRowData  = { ...currVariant.rowData, [columnName]: newValue };
+    const updatedElements = substituteRowInElements(masterEls, updatedRowData, colMap, mediaColMap);
 
     setVariants(prev => prev.map(v =>
       v.id === variantId
-        ? { ...v, rowData: updatedRowData, pageSnapshots: newPageSnapshots,
-            elements: activeSnap.elements, layers: activeSnap.layers, isDetached: true }
+        ? { ...v, rowData: updatedRowData, elements: updatedElements, isDetached: true }
         : v
     ));
 
     if (activeVariantIdRef.current === variantId) {
-      setCanvasElements(activeSnap.elements);
+      setCanvasElements(updatedElements);
       variantDirtyRef.current = true;
     }
   }, []);
@@ -1844,28 +1654,14 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     elementId: string,
     src:       string,
   ) => {
-    const newSrc       = src.trim() ? resolveMediaUrl(src) : undefined;
-    const activePageId = activePageIdRef.current;
-
+    const newSrc = src.trim() ? resolveMediaUrl(src) : undefined;
     setVariants(prev => prev.map(v => {
       if (v.id !== variantId) return v;
-      // Update the element in the currently-active page's snapshot
-      const currSnap = v.pageSnapshots?.[activePageId] ?? { elements: v.elements, layers: v.layers };
-      const updatedPageEls = currSnap.elements.map(el =>
+      const updatedElements = v.elements.map(el =>
         el.id === elementId ? { ...el, src: newSrc } : el
       );
-      const newSnapshots = {
-        ...v.pageSnapshots,
-        [activePageId]: { ...currSnap, elements: updatedPageEls },
-      };
-      return {
-        ...v,
-        pageSnapshots: newSnapshots,
-        elements:      updatedPageEls,   // keep flat view in sync
-        isDetached:    true,
-      };
+      return { ...v, elements: updatedElements, isDetached: true };
     }));
-
     if (activeVariantIdRef.current === variantId) {
       setCanvasElements(prev => prev.map(el =>
         el.id === elementId ? { ...el, src: newSrc } : el
@@ -1894,10 +1690,6 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
         };
       })
     );
-    if (finalContent) {
-      const preview = finalContent.length > 32 ? finalContent.slice(0, 32) + '…' : finalContent;
-      addEventLogEntryRef.current(`Text edited · "${preview}"`, 'Text', '#F59E0B');
-    }
     setEditingTextId(null);
   }, []);
 
@@ -2089,61 +1881,8 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
 
   const switchCanvasPage = useCallback((pageId: string) => {
     if (activePageIdRef.current === pageId) return;
-
-    const currVariantId = activeVariantIdRef.current;
-
-    if (currVariantId !== null) {
-      // ── On a variant: persist the current page into its snapshot, ──
-      // ── then load the target page from its snapshot.              ──
-      const currPageId = activePageIdRef.current;
-      const currEls    = canvasElementsRef.current;
-      const currLys    = layersRef.current;
-
-      // Read target snapshot BEFORE the async setVariants fires
-      const variant  = variantsRef.current.find(v => v.id === currVariantId);
-      const targetSnap = variant?.pageSnapshots?.[pageId] ?? { elements: [], layers: [] };
-
-      setVariants(prev => prev.map(v => {
-        if (v.id !== currVariantId) return v;
-        return {
-          ...v,
-          isDetached: v.isDetached || variantDirtyRef.current,
-          pageSnapshots: {
-            ...v.pageSnapshots,
-            [currPageId]: { elements: [...currEls], layers: [...currLys] },
-          },
-          // Keep variant.elements in sync with the page we're switching TO
-          elements: [...targetSnap.elements],
-          layers:   [...targetSnap.layers],
-        };
-      }));
-
-      // Load target page
-      setCanvasElements([...targetSnap.elements]);
-      setLayers([...targetSnap.layers]);
-      setActivePageIdState(pageId);
-      setSelectedElementIds([]);
-      setSelectedElementType(null);
-      setEditingGroupId(null);
-      setHistory([]);
-      setFuture([]);
-
-      // ── Keep masterElements in sync with the new active page ──────
-      // masterElements is used by useConfigureVariables to detect text/media
-      // variables for the active page. Without this update, masterElements
-      // would keep the ENTRY page's data after switching canvas pages on a
-      // variant, causing textVariables to change → generateVariants to re-fire
-      // with the wrong master elements for the newly-active page.
-      const newMasterPd = canvasPageDataRef.current.get(pageId);
-      if (newMasterPd) {
-        setMasterElements([...newMasterPd.elements]);
-        setMasterLayers([...newMasterPd.layers]);
-      }
-    } else {
-      // ── On master: existing behaviour ──
-      saveCurrentPageData();
-      loadPageData(pageId);
-    }
+    saveCurrentPageData();
+    loadPageData(pageId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2162,7 +1901,6 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setEditingGroupId(null);
     setHistory([]);
     setFuture([]);
-    addEventLogEntryRef.current(`Canvas added · ${newName}`, 'Frame', '#3B82F6');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2259,19 +1997,6 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     const trimmed = name.trim();
     if (!trimmed) return;
     setCanvasPages(prev => prev.map(p => p.id === pageId ? { ...p, name: trimmed } : p));
-    addEventLogEntryRef.current(`Canvas renamed · ${trimmed}`, 'Frame', '#3B82F6');
-  }, []);
-
-  const moveCanvasPage = useCallback((fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex) return;
-    setCanvasPages(prev => {
-      if (fromIndex < 0 || fromIndex >= prev.length) return prev;
-      if (toIndex   < 0 || toIndex   >= prev.length) return prev;
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next;
-    });
   }, []);
   const setRightPanelForcedOpen = useCallback((v: boolean) => setRightPanelForcedOpenState(v), []);
   const setActivityPanelOpen = useCallback((v: boolean) => setActivityPanelOpenState(v), []);
@@ -2417,10 +2142,9 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setActivePanel, setActiveInsertItem,
     setIsPreviewMode, setIsTimelineVisible, setIsTimelineExpanded, setAudioPlaceholderInTimeline,
     setActivePageId,
-    switchCanvasPage, addCanvasPage, duplicateCanvasPage, deleteCanvasPage, renameCanvasPage, moveCanvasPage,
+    switchCanvasPage, addCanvasPage, duplicateCanvasPage, deleteCanvasPage, renameCanvasPage,
     commentMode, canvasComments, highlightedCommentId,
     setCommentMode, addCanvasComment, toggleCanvasCommentResolved, setHighlightedCommentId, addCommentReply,
-    eventLog, addEventLogEntry,
     setLayerVisibility, setLayerLocked, setLayerName,
     setTextProp, setCanvasOffset, setCanvasScale, setCanvasDimensions, fitCanvasToScreen, setRightPanelForcedOpen,
     setActivityPanelOpen, setActivityPanelTab,

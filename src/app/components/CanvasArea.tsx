@@ -1,13 +1,11 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   MoreVertical, ChevronRight, Cloud, Save, RefreshCw,
   ChevronDown, Minus, Plus, Maximize2, Check, X, MessageCircle, Send,
-  ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
 import type { CanvasPage, FeedVariant, CanvasComment, CanvasElement } from '../store/useDesignWorkspaceStore';
-import { useCurrentUser } from '../hooks/useCurrentUser';
 import { CanvasFrame } from './CanvasFrame';
 import { PageStrip, MiniCanvas } from './PageStrip';
 import { Slider } from './ui/slider';
@@ -90,18 +88,17 @@ function PreviewToggle() {
 }
 
 // ─── Canvas context menu option ───────────────────────────────────
-function CanvasMenuOption({ label, onSelect, disabled, icon }: { label: string; onSelect: () => void; disabled?: boolean; icon?: React.ReactNode }) {
+function CanvasMenuOption({ label, onSelect, disabled }: { label: string; onSelect: () => void; disabled?: boolean }) {
   return (
     <button
       onClick={disabled ? undefined : onSelect}
       disabled={disabled}
-      className={`w-full flex items-center gap-2 text-left px-3 py-1.5 text-[12px] transition-colors ${
+      className={`w-full text-left px-3 py-1.5 text-[12px] transition-colors ${
         disabled
           ? 'text-[#BBBBBB] cursor-not-allowed'
           : 'text-[#111111] hover:bg-[#f5f5f5]'
       }`}
     >
-      {icon && <span className="shrink-0">{icon}</span>}
       {label}
     </button>
   );
@@ -113,7 +110,6 @@ const PAGE_GAP = 80; // px between the bottom of one canvas and the top of the n
 function CanvasPageHeader({
   page,
   isActive,
-  pageIndex,
   canvasWidth,
   canvasHeight,
   canvasPages,
@@ -123,11 +119,9 @@ function CanvasPageHeader({
   duplicateCanvasPage,
   deleteCanvasPage,
   renameCanvasPage,
-  moveCanvasPage,
 }: {
   page:               CanvasPage;
   isActive:           boolean;
-  pageIndex:          number;
   canvasWidth:        number;
   canvasHeight:       number;
   canvasPages:        CanvasPage[];
@@ -137,7 +131,6 @@ function CanvasPageHeader({
   duplicateCanvasPage:(id: string) => void;
   deleteCanvasPage:   (id: string) => void;
   renameCanvasPage:   (id: string, name: string) => void;
-  moveCanvasPage:     (fromIndex: number, toIndex: number) => void;
 }) {
   const [menuOpen,    setMenuOpen]    = useState(false);
   const [renaming,    setRenaming]    = useState(false);
@@ -237,34 +230,20 @@ function CanvasPageHeader({
             <MoreVertical size={13} />
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-[#E2E2E2] py-1 w-48 z-50">
+            <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-[#E2E2E2] py-1 w-44 z-50">
               <CanvasMenuOption label="Rename canvas"    onSelect={startRename} />
               <CanvasMenuOption
                 label="Duplicate canvas"
                 onSelect={() => { setMenuOpen(false); duplicateCanvasPage(page.id); }}
               />
               <CanvasMenuOption
-                label="Add new canvas"
-                onSelect={() => { setMenuOpen(false); addCanvasPage(); }}
-              />
-              <CanvasMenuOption
                 label="Delete canvas"
                 onSelect={() => { setMenuOpen(false); deleteCanvasPage(page.id); }}
                 disabled={canvasPages.length <= 1}
               />
-              {/* ── Move divider ── */}
-              <div className="my-1 border-t border-[rgba(0,0,0,0.07)]" />
               <CanvasMenuOption
-                label="Move up"
-                icon={<ArrowUp size={12} />}
-                onSelect={() => { setMenuOpen(false); moveCanvasPage(pageIndex, pageIndex - 1); }}
-                disabled={pageIndex === 0}
-              />
-              <CanvasMenuOption
-                label="Move down"
-                icon={<ArrowDown size={12} />}
-                onSelect={() => { setMenuOpen(false); moveCanvasPage(pageIndex, pageIndex + 1); }}
-                disabled={pageIndex === canvasPages.length - 1}
+                label="Add new canvas"
+                onSelect={() => { setMenuOpen(false); addCanvasPage(); }}
               />
             </div>
           )}
@@ -281,23 +260,16 @@ function AllCanvasFrames() {
     canvasPages, activePageId,
     activeVariantId, variants,
     canvasElements,
-    addCanvasPage, duplicateCanvasPage, deleteCanvasPage, renameCanvasPage, moveCanvasPage,
+    addCanvasPage, duplicateCanvasPage, deleteCanvasPage, renameCanvasPage,
     switchCanvasPage,
   } = useDesignWorkspace();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: PAGE_GAP, alignItems: 'flex-start' }}>
-      {canvasPages.map((page, pageIndex) => {
+      {canvasPages.map(page => {
         const isActive = page.id === activePageId;
-        // Active page: live canvasElements.
-        // Inactive pages: use variant's page snapshot when on a feed row,
-        // otherwise fall back to the master elementSnapshot.
-        const currentVariant = activeVariantId !== null
-          ? variants.find(v => v.id === activeVariantId) ?? null
-          : null;
-        const elements = isActive
-          ? canvasElements
-          : (currentVariant?.pageSnapshots?.[page.id]?.elements ?? page.elementSnapshot);
+        // Active page: live canvasElements. Others: their last-saved snapshot.
+        const elements = isActive ? canvasElements : page.elementSnapshot;
 
         return (
           <div
@@ -314,7 +286,6 @@ function AllCanvasFrames() {
               <CanvasPageHeader
                 page={page}
                 isActive={isActive}
-                pageIndex={pageIndex}
                 canvasWidth={canvasWidth}
                 canvasHeight={canvasHeight}
                 canvasPages={canvasPages}
@@ -324,7 +295,6 @@ function AllCanvasFrames() {
                 duplicateCanvasPage={duplicateCanvasPage}
                 deleteCanvasPage={deleteCanvasPage}
                 renameCanvasPage={renameCanvasPage}
-                moveCanvasPage={moveCanvasPage}
               />
             </div>
 
@@ -489,7 +459,6 @@ function CommentThreadPopup({
 }) {
   const [replyText, setReplyText] = useState('');
   const popupRef = useRef<HTMLDivElement>(null);
-  const { user } = useCurrentUser();
 
   // Close on click outside the popup
   useEffect(() => {
@@ -588,7 +557,7 @@ function CommentThreadPopup({
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 3 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#1f1d25' }}>{user.name}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#1f1d25' }}>Lucas</span>
               <span style={{ fontSize: 10, color: '#9c99a9' }}>{comment.timestamp}</span>
             </div>
             <p style={{ fontSize: 12, color: '#686576', lineHeight: 1.4, wordBreak: 'break-word', margin: 0 }}>
@@ -612,7 +581,7 @@ function CommentThreadPopup({
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: '#1f1d25' }}>{user.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#1f1d25' }}>Lucas</span>
                   <span style={{ fontSize: 10, color: '#9c99a9' }}>{reply.timestamp}</span>
                 </div>
                 <p style={{ fontSize: 12, color: '#686576', lineHeight: 1.4, wordBreak: 'break-word', margin: 0 }}>
@@ -629,10 +598,10 @@ function CommentThreadPopup({
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <div style={{
             width: 24, height: 24, borderRadius: '50%',
-            backgroundColor: user.color,
+            backgroundColor: '#7BB3E0',
             display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2,
           }}>
-            <span style={{ fontSize: 9, color: 'white', fontWeight: 700 }}>{user.initials}</span>
+            <span style={{ fontSize: 9, color: 'white', fontWeight: 700 }}>LM</span>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <textarea

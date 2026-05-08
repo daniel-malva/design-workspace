@@ -4,7 +4,6 @@ import { LeftPane } from './components/LeftPane';
 import { CanvasArea } from './components/CanvasArea';
 import { RightPanel } from './components/RightPanel';
 import { Timeline } from './components/Timeline';
-import { UserSetupModal } from './components/UserSetupModal';
 import { useInsertMenuShortcuts } from './hooks/useInsertMenuShortcuts';
 import { useCanvasKeyboardShortcuts } from './hooks/useCanvasKeyboardShortcuts';
 
@@ -40,7 +39,6 @@ export default function App() {
   return (
     <DesignWorkspaceProvider>
       <DesignWorkspaceLayout />
-      <UserSetupModal />
     </DesignWorkspaceProvider>
   );
 }
