@@ -145,9 +145,9 @@ export function PagesTab() {
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   // Thumbnail dimensions — preserve canvas aspect ratio
-  // Single-column layout: +~30% larger than original 2-col size
-  const GRID_W = 200;
-  const GRID_H = Math.max(100, Math.round(GRID_W * canvasHeight / canvasWidth));
+  // Single-column layout: +~30% larger than original 2-col size, then −10%
+  const GRID_W = 180;
+  const GRID_H = Math.max(90, Math.round(GRID_W * canvasHeight / canvasWidth));
   const LIST_W = 56;
   const LIST_H = Math.max(32, Math.round(LIST_W * canvasHeight / canvasWidth));
 
@@ -335,7 +335,7 @@ export function PagesTab() {
                       elements={els}
                       canvasW={canvasWidth}
                       canvasH={canvasHeight}
-                      thumbW={GRID_W}
+                      thumbW={GRID_W - 2}
                       thumbH={GRID_H}
                     />
                     {/* "active" pill */}
