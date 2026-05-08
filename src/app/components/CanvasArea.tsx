@@ -264,12 +264,21 @@ function AllCanvasFrames() {
     switchCanvasPage,
   } = useDesignWorkspace();
 
+  // When on a variant, inactive pages should show the variant's substituted
+  // elements — not the master snapshot stored in page.elementSnapshot.
+  const currentVariant = activeVariantId !== null
+    ? variants.find(v => v.id === activeVariantId) ?? null
+    : null;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: PAGE_GAP, alignItems: 'flex-start' }}>
       {canvasPages.map(page => {
         const isActive = page.id === activePageId;
-        // Active page: live canvasElements. Others: their last-saved snapshot.
-        const elements = isActive ? canvasElements : page.elementSnapshot;
+        // Active page: live canvasElements (already substituted when on a variant).
+        // Inactive pages: variant pageSnapshot when on a variant, master snapshot otherwise.
+        const elements = isActive
+          ? canvasElements
+          : (currentVariant?.pageSnapshots?.[page.id]?.elements ?? page.elementSnapshot);
 
         return (
           <div
