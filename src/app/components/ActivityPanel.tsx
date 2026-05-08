@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react';
-import { Send, LayoutGrid, List, CheckCircle2, Circle, Plus, Check, X, CornerDownRight } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Send, LayoutGrid, List, CheckCircle2, Circle, Plus, Check, X, CornerDownRight, MoreHorizontal, Copy, Trash2, PenLine, FilePlus, GripVertical, ArrowUp, ArrowDown } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { Separator } from './ui/separator';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
-import type { CanvasComment } from '../store/useDesignWorkspaceStore';
+import { useCurrentUser } from '../hooks/useCurrentUser';
+import type { CanvasComment, EventLogEntry } from '../store/useDesignWorkspaceStore';
 import { MiniCanvas } from './PageStrip';
 
 // ══════════════════════════════════════════════════════════════════
@@ -44,14 +45,33 @@ const AVATAR_COLORS = {
   joao:  '#9B8EC4',
 };
 
-const CATEGORY_COLORS = {
+const CATEGORY_COLORS: Record<string, string> = {
   Frame:     '#3B82F6',
   Style:     '#8B5CF6',
   Component: '#10B981',
   Layer:     '#6B7280',
   Text:      '#F59E0B',
   Image:     '#EC4899',
+  Comment:   '#5B4EFF',
 };
+
+function formatEventTime(ts: number): string {
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 60)  return 'just';
+  if (diff < 3600) return `${Math.floor(diff / 60)} min`;
+  return `${Math.floor(diff / 3600)} hr`;
+}
+
+function entryToEvent(e: EventLogEntry, userName: string, userInitials: string, userColor: string): ActivityEvent {
+  return {
+    id:            e.id,
+    user:          { name: userName, initials: userInitials, avatarColor: userColor },
+    action:        e.action,
+    category:      e.category,
+    categoryColor: e.categoryColor,
+    timestamp:     formatEventTime(e.timestamp),
+  };
+}
 
 const nowEvents: ActivityEvent[] = [
   { id: '1', user: { name: 'Lucas', initials: 'LM', avatarColor: AVATAR_COLORS.lucas }, action: 'Frame resized · 1440×900',       category: 'Frame',     categoryColor: CATEGORY_COLORS.Frame,     timestamp: 'just'   },
@@ -148,268 +168,282 @@ const TAB_CLS = `
 function PagesTab() {
   const {
     canvasPages, activePageId, canvasElements,
-    switchCanvasPage, addCanvasPage, renameCanvasPage,
+    switchCanvasPage, addCanvasPage, duplicateCanvasPage, deleteCanvasPage, renameCanvasPage,
+    moveCanvasPage,
     canvasWidth, canvasHeight,
   } = useDesignWorkspace();
 
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renamingId,  setRenamingId]  = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [openMenuId,  setOpenMenuId]  = useState<string | null>(null);
+  const [hoveredId,   setHoveredId]   = useState<string | null>(null);
+  // Drag-to-reorder state
+  const [dragSrcId,   setDragSrcId]   = useState<string | null>(null);
+  const [dragOverId,  setDragOverId]  = useState<string | null>(null);
+  const [dragOverPos, setDragOverPos] = useState<'before' | 'after'>('after');
+
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const menuRef        = useRef<HTMLDivElement>(null);
 
-  // Thumbnail dimensions — preserve canvas aspect ratio
-  const GRID_W = 104;
-  const GRID_H = Math.max(52, Math.round(GRID_W * canvasHeight / canvasWidth));
-  const LIST_W = 52;
-  const LIST_H = Math.max(28, Math.round(LIST_W * canvasHeight / canvasWidth));
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!openMenuId) return;
+    function onDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [openMenuId]);
 
-  const thumbW = viewMode === 'grid' ? GRID_W : LIST_W;
-  const thumbH = viewMode === 'grid' ? GRID_H : LIST_H;
+  // Panel inner width: 268px − 24px (px-3 × 2) − 4px (border × 2) = 240px → scaled 75%
+  const THUMB_W = 180;
+  const THUMB_H = Math.max(120, Math.round(THUMB_W * canvasHeight / canvasWidth));
 
   function startRename(pageId: string, currentName: string) {
+    setOpenMenuId(null);
     setRenamingId(pageId);
     setRenameValue(currentName);
     requestAnimationFrame(() => renameInputRef.current?.select());
   }
-
   function commitRename() {
     if (renamingId && renameValue.trim()) renameCanvasPage(renamingId, renameValue.trim());
     setRenamingId(null);
   }
-
   function cancelRename() { setRenamingId(null); }
 
-  // Get elements for a given page (active page uses live canvasElements for up-to-date thumbnail)
   function getPageElements(page: typeof canvasPages[0]) {
     return page.id === activePageId ? canvasElements : page.elementSnapshot;
   }
 
-  // ── Grid view ─────────────────────────────────────────────────
-  if (viewMode === 'grid') {
-    return (
-      <div className="flex flex-col w-full h-full">
-        <PageToolbar viewMode={viewMode} onViewChange={setViewMode} count={canvasPages.length} onAdd={addCanvasPage} />
-        <Separator className="m-0 shrink-0" />
-
-        <div className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="grid grid-cols-2 gap-3 p-3">
-            {canvasPages.map(page => {
-              const isActive   = page.id === activePageId;
-              const isRenaming = renamingId === page.id;
-              const els        = getPageElements(page);
-              return (
-                <div key={page.id} className="flex flex-col items-center gap-1.5">
-                  {/* Thumbnail button */}
-                  <button
-                    onClick={() => switchCanvasPage(page.id)}
-                    onDoubleClick={() => startRename(page.id, page.name)}
-                    className="w-full"
-                    title={page.name}
-                  >
-                    <div
-                      className="relative overflow-hidden transition-all w-full"
-                      style={{
-                        height:       thumbH,
-                        borderRadius: 6,
-                        borderWidth:  2,
-                        borderStyle:  'solid',
-                        borderColor:  isActive ? '#5B4EFF' : '#D8D8D8',
-                        boxShadow:    isActive ? '0 0 0 2px rgba(91,78,255,0.18)' : undefined,
-                      }}
-                    >
-                      <MiniCanvas
-                        elements={els}
-                        canvasW={canvasWidth}
-                        canvasH={canvasHeight}
-                        thumbW={thumbW - 4}
-                        thumbH={thumbH - 4}
-                      />
-                      {isActive && (
-                        <div className="absolute bottom-0 inset-x-0 bg-[#5B4EFF] py-0.5">
-                          <span className="block text-center text-[9px] text-white font-medium leading-none py-0.5">active</span>
-                        </div>
-                      )}
-                    </div>
-                  </button>
-
-                  {/* Inline rename or label */}
-                  {isRenaming ? (
-                    <div className="flex items-center gap-0.5 w-full">
-                      <input
-                        ref={renameInputRef}
-                        value={renameValue}
-                        onChange={e => setRenameValue(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter')  { e.preventDefault(); commitRename(); }
-                          if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
-                        }}
-                        onBlur={commitRename}
-                        className="flex-1 text-[10px] font-medium text-[#111111] bg-white border border-[#5B4EFF] rounded px-1 py-0.5 outline-none min-w-0"
-                        autoFocus
-                      />
-                      <button onMouseDown={e => { e.preventDefault(); commitRename(); }} className="text-[#5B4EFF] shrink-0">
-                        <Check size={10} />
-                      </button>
-                      <button onMouseDown={e => { e.preventDefault(); cancelRename(); }} className="text-[#9c99a9] shrink-0">
-                        <X size={10} />
-                      </button>
-                    </div>
-                  ) : (
-                    <span
-                      className="text-[10px] font-medium leading-none truncate w-full text-center cursor-text"
-                      style={{ color: isActive ? '#5B4EFF' : '#5A5770' }}
-                      onDoubleClick={() => startRename(page.id, page.name)}
-                      title="Double-click to rename"
-                    >
-                      {page.name}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
+  // ── Drag handlers ─────────────────────────────────────────────────
+  function onDragStart(e: React.DragEvent, pageId: string) {
+    setDragSrcId(pageId);
+    e.dataTransfer.effectAllowed = 'move';
+    // Make the ghost semi-transparent
+    e.dataTransfer.setData('text/plain', pageId);
+  }
+  function onDragOver(e: React.DragEvent, pageId: string) {
+    e.preventDefault();
+    if (pageId === dragSrcId) return;
+    e.dataTransfer.dropEffect = 'move';
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setDragOverId(pageId);
+    setDragOverPos(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
+  }
+  function onDrop(e: React.DragEvent, targetPageId: string) {
+    e.preventDefault();
+    if (!dragSrcId || dragSrcId === targetPageId) { resetDrag(); return; }
+    const fromIdx = canvasPages.findIndex(p => p.id === dragSrcId);
+    let   toIdx   = canvasPages.findIndex(p => p.id === targetPageId);
+    if (dragOverPos === 'after') toIdx = Math.min(toIdx + 1, canvasPages.length - 1);
+    // Adjust for the shift after removal
+    const adjustedTo = fromIdx < toIdx ? toIdx - 1 : toIdx;
+    if (fromIdx !== adjustedTo) moveCanvasPage(fromIdx, adjustedTo);
+    resetDrag();
+  }
+  function resetDrag() {
+    setDragSrcId(null);
+    setDragOverId(null);
   }
 
-  // ── List view ────────────────────────────────────────────────
+  const canDelete = canvasPages.length > 1;
+
   return (
     <div className="flex flex-col w-full h-full">
-      <PageToolbar viewMode={viewMode} onViewChange={setViewMode} count={canvasPages.length} onAdd={addCanvasPage} />
-      <Separator className="m-0 shrink-0" />
-
-      <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        {canvasPages.map(page => {
-          const isActive   = page.id === activePageId;
-          const isRenaming = renamingId === page.id;
-          const els        = getPageElements(page);
-          return (
-            <div key={page.id}>
-              <button
-                onClick={() => switchCanvasPage(page.id)}
-                onDoubleClick={() => startRename(page.id, page.name)}
-                className={`flex items-center gap-3 w-full px-3 py-2 transition-colors text-left ${
-                  isActive ? 'bg-[rgba(91,78,255,0.06)]' : 'hover:bg-gray-50'
-                }`}
-              >
-                {/* Thumbnail */}
-                <div
-                  className="relative overflow-hidden shrink-0"
-                  style={{
-                    width: LIST_W, height: LIST_H,
-                    borderRadius: 4,
-                    borderWidth:  2,
-                    borderStyle:  'solid',
-                    borderColor:  isActive ? '#5B4EFF' : '#D8D8D8',
-                  }}
-                >
-                  <MiniCanvas
-                    elements={els}
-                    canvasW={canvasWidth}
-                    canvasH={canvasHeight}
-                    thumbW={LIST_W - 4}
-                    thumbH={LIST_H - 4}
-                  />
-                </div>
-
-                {/* Name — inline rename or label */}
-                <div className="flex-1 min-w-0">
-                  {isRenaming ? (
-                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                      <input
-                        ref={renameInputRef}
-                        value={renameValue}
-                        onChange={e => setRenameValue(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter')  { e.preventDefault(); commitRename(); }
-                          if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
-                        }}
-                        onBlur={commitRename}
-                        className="flex-1 text-[12px] font-medium text-[#111111] bg-white border border-[#5B4EFF] rounded px-1.5 py-0.5 outline-none min-w-0"
-                        autoFocus
-                      />
-                      <button onMouseDown={e => { e.preventDefault(); commitRename(); }} className="text-[#5B4EFF]">
-                        <Check size={11} />
-                      </button>
-                      <button onMouseDown={e => { e.preventDefault(); cancelRename(); }} className="text-[#9c99a9]">
-                        <X size={11} />
-                      </button>
-                    </div>
-                  ) : (
-                    <span
-                      className="text-[12px] font-medium truncate block"
-                      style={{ color: isActive ? '#5B4EFF' : '#1f1d25' }}
-                    >
-                      {page.name}
-                    </span>
-                  )}
-                </div>
-
-                {/* Active dot */}
-                {isActive && !isRenaming && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#5B4EFF] shrink-0" />
-                )}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function PageToolbar({
-  viewMode,
-  onViewChange,
-  count,
-  onAdd,
-}: {
-  viewMode: 'grid' | 'list';
-  onViewChange: (v: 'grid' | 'list') => void;
-  count: number;
-  onAdd: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between px-3 py-2.5 shrink-0">
-      <span className="text-[11px] text-[#9c99a9] font-medium">
-        {count} {count === 1 ? 'page' : 'pages'}
-      </span>
-      <div className="flex items-center gap-1.5">
-        {/* Grid / List toggle */}
-        <div className="flex items-center gap-0.5 bg-[#f5f4f8] rounded-lg p-0.5">
-          <button
-            onClick={() => onViewChange('grid')}
-            className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
-              viewMode === 'grid'
-                ? 'bg-white text-[#473bab] shadow-sm'
-                : 'text-[#9c99a9] hover:text-[#686576]'
-            }`}
-            title="Grid view"
-          >
-            <LayoutGrid size={13} />
-          </button>
-          <button
-            onClick={() => onViewChange('list')}
-            className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
-              viewMode === 'list'
-                ? 'bg-white text-[#473bab] shadow-sm'
-                : 'text-[#9c99a9] hover:text-[#686576]'
-            }`}
-            title="List view"
-          >
-            <List size={13} />
-          </button>
-        </div>
-
-        {/* Add new canvas page */}
+      {/* ── Toolbar ─────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-3 py-2.5 shrink-0">
+        <span className="text-[11px] text-[#9c99a9] font-medium">
+          {canvasPages.length} {canvasPages.length === 1 ? 'page' : 'pages'}
+        </span>
         <button
-          onClick={onAdd}
+          onClick={addCanvasPage}
           className="w-6 h-6 flex items-center justify-center rounded-md text-[#9c99a9] hover:text-[#473bab] hover:bg-[#f0eeff] transition-colors"
           title="Add new canvas"
         >
           <Plus size={13} />
         </button>
+      </div>
+      <Separator className="m-0 shrink-0" />
+
+      {/* ── Single-column vertical list ──────────────────────────── */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div
+          className="flex flex-col items-center gap-1 p-3"
+          onDragLeave={() => setDragOverId(null)}
+        >
+          {canvasPages.map((page, index) => {
+            const isActive   = page.id === activePageId;
+            const isRenaming = renamingId === page.id;
+            const isHovered  = hoveredId === page.id;
+            const menuOpen   = openMenuId === page.id;
+            const isDragging = dragSrcId === page.id;
+            const isOver     = dragOverId === page.id;
+            const els        = getPageElements(page);
+            const isFirst    = index === 0;
+            const isLast     = index === canvasPages.length - 1;
+
+            return (
+              <div
+                key={page.id}
+                draggable
+                onDragStart={e => onDragStart(e, page.id)}
+                onDragOver={e => onDragOver(e, page.id)}
+                onDrop={e => onDrop(e, page.id)}
+                onDragEnd={resetDrag}
+                onMouseEnter={() => setHoveredId(page.id)}
+                onMouseLeave={() => setHoveredId(null)}
+                className={`relative flex flex-col gap-1.5 p-2 rounded-xl transition-colors ${
+                  isDragging  ? 'opacity-40' :
+                  isActive    ? 'bg-[rgba(91,78,255,0.06)]' :
+                                'hover:bg-gray-50'
+                }`}
+                style={{ cursor: 'grab', width: THUMB_W + 16 }}
+              >
+                {/* ── Drop indicator — before ── */}
+                {isOver && dragOverPos === 'before' && (
+                  <div className="absolute left-1 right-1 top-0 h-[2px] bg-[#5B4EFF] rounded-full -translate-y-[5px] z-10 pointer-events-none" />
+                )}
+
+                {/* ── Header row: grip · index · name · kebab ── */}
+                <div className="flex items-center gap-1 px-0.5 min-h-[22px]">
+                  {/* Grip handle */}
+                  <GripVertical size={11} className="text-[#c5c3ce] shrink-0 cursor-grab" />
+
+                  {/* Page number */}
+                  <span className="text-[10px] text-[#b5b3bf] font-medium shrink-0 tabular-nums w-4 text-center">
+                    {index + 1}
+                  </span>
+
+                  {isRenaming ? (
+                    <div className="flex items-center gap-1 flex-1 min-w-0">
+                      <input
+                        ref={renameInputRef}
+                        value={renameValue}
+                        onChange={e => setRenameValue(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter')  { e.preventDefault(); commitRename(); }
+                          if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+                        }}
+                        onBlur={commitRename}
+                        className="flex-1 text-[11px] font-medium text-[#111111] bg-white border border-[#5B4EFF] rounded px-1.5 py-0.5 outline-none min-w-0"
+                        autoFocus
+                      />
+                      <button onMouseDown={e => { e.preventDefault(); commitRename(); }} className="text-[#5B4EFF] shrink-0"><Check size={11} /></button>
+                      <button onMouseDown={e => { e.preventDefault(); cancelRename(); }}  className="text-[#9c99a9] shrink-0"><X size={11} /></button>
+                    </div>
+                  ) : (
+                    <>
+                      <span
+                        className="text-[11px] font-medium truncate flex-1 cursor-text"
+                        style={{ color: isActive ? '#5B4EFF' : '#1f1d25' }}
+                        onDoubleClick={() => startRename(page.id, page.name)}
+                        title="Double-click to rename"
+                      >
+                        {page.name}
+                      </span>
+
+                      {/* ── Kebab ── */}
+                      <div className="relative shrink-0" ref={menuOpen ? menuRef : undefined}>
+                        <button
+                          onClick={e => { e.stopPropagation(); setOpenMenuId(menuOpen ? null : page.id); }}
+                          className={`w-5 h-5 flex items-center justify-center rounded transition-all ${
+                            menuOpen
+                              ? 'opacity-100 text-[#473bab] bg-[#f0eeff]'
+                              : isHovered
+                              ? 'opacity-100 text-[#686576] hover:text-[#473bab] hover:bg-[#f0eeff]'
+                              : 'opacity-0 pointer-events-none'
+                          }`}
+                          title="Page options"
+                        >
+                          <MoreHorizontal size={13} />
+                        </button>
+
+                        {menuOpen && (
+                          <div
+                            ref={menuRef}
+                            className="absolute right-0 top-full mt-1 z-50 min-w-[164px] bg-white rounded-xl shadow-lg border border-[rgba(0,0,0,0.1)] py-1 overflow-hidden"
+                          >
+                            <button onClick={() => startRename(page.id, page.name)}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1f1d25] hover:bg-[#f5f4ff] transition-colors text-left">
+                              <PenLine size={12} className="text-[#686576] shrink-0" /> Rename
+                            </button>
+                            <button onClick={() => { duplicateCanvasPage(page.id); setOpenMenuId(null); }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1f1d25] hover:bg-[#f5f4ff] transition-colors text-left">
+                              <Copy size={12} className="text-[#686576] shrink-0" /> Duplicate
+                            </button>
+                            <button onClick={() => { addCanvasPage(); setOpenMenuId(null); }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1f1d25] hover:bg-[#f5f4ff] transition-colors text-left">
+                              <FilePlus size={12} className="text-[#686576] shrink-0" /> Add new page
+                            </button>
+                            <div className="my-1 border-t border-[rgba(0,0,0,0.07)]" />
+                            <button onClick={() => { if (!canDelete) return; deleteCanvasPage(page.id); setOpenMenuId(null); }}
+                              disabled={!canDelete}
+                              className={`w-full flex items-center gap-2.5 px-3 py-2 text-[12px] transition-colors text-left ${canDelete ? 'text-red-500 hover:bg-red-50' : 'text-[#c5c3ce] cursor-not-allowed'}`}>
+                              <Trash2 size={12} className="shrink-0" /> Delete
+                            </button>
+                            <div className="my-1 border-t border-[rgba(0,0,0,0.07)]" />
+                            <button onClick={() => { moveCanvasPage(index, index - 1); setOpenMenuId(null); }}
+                              disabled={isFirst}
+                              className={`w-full flex items-center gap-2.5 px-3 py-2 text-[12px] transition-colors text-left ${!isFirst ? 'text-[#1f1d25] hover:bg-[#f5f4ff]' : 'text-[#c5c3ce] cursor-not-allowed'}`}>
+                              <ArrowUp size={12} className="shrink-0" /> Move up
+                            </button>
+                            <button onClick={() => { moveCanvasPage(index, index + 1); setOpenMenuId(null); }}
+                              disabled={isLast}
+                              className={`w-full flex items-center gap-2.5 px-3 py-2 text-[12px] transition-colors text-left ${!isLast ? 'text-[#1f1d25] hover:bg-[#f5f4ff]' : 'text-[#c5c3ce] cursor-not-allowed'}`}>
+                              <ArrowDown size={12} className="shrink-0" /> Move down
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* ── Thumbnail ── */}
+                <button
+                  onClick={() => switchCanvasPage(page.id)}
+                  title={page.name}
+                  style={{ cursor: 'pointer', display: 'block' }}
+                >
+                  <div
+                    className="relative overflow-hidden transition-all"
+                    style={{
+                      width:        THUMB_W,
+                      height:       THUMB_H,
+                      borderRadius: 8,
+                      borderWidth:  2,
+                      borderStyle:  'solid',
+                      borderColor:  isActive ? '#5B4EFF' : '#D8D8D8',
+                      boxShadow:    isActive ? '0 0 0 3px rgba(91,78,255,0.15)' : undefined,
+                    }}
+                  >
+                    <MiniCanvas
+                      elements={els}
+                      canvasW={canvasWidth}
+                      canvasH={canvasHeight}
+                      thumbW={THUMB_W - 4}
+                      thumbH={THUMB_H - 4}
+                    />
+                    {isActive && (
+                      <div className="absolute top-1.5 right-1.5">
+                        <span className="text-[9px] text-white bg-[#5B4EFF] px-1.5 py-0.5 rounded-full font-medium leading-none">
+                          active
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </button>
+
+                {/* ── Drop indicator — after ── */}
+                {isOver && dragOverPos === 'after' && (
+                  <div className="absolute left-1 right-1 bottom-0 h-[2px] bg-[#5B4EFF] rounded-full translate-y-[5px] z-10 pointer-events-none" />
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -460,23 +494,35 @@ function ActivitySection({ title, events }: { title: string; events: ActivityEve
   );
 }
 
-const MY_INITIALS = 'LM';
-
 function EventLogTab() {
+  const { eventLog } = useDesignWorkspace();
+  const { user } = useCurrentUser();
   const [filter, setFilter] = useState<'all' | 'mine'>('all');
 
+  // Replace "Lucas" placeholder entries in mock data with the current user
+  function substituteUser(evs: ActivityEvent[]): ActivityEvent[] {
+    return evs.map(e =>
+      e.user.initials === 'LM'
+        ? { ...e, user: { name: user.name, initials: user.initials, avatarColor: user.color } }
+        : e
+    );
+  }
+
   const filterFn = (evs: ActivityEvent[]) =>
-    filter === 'mine' ? evs.filter(e => e.user.initials === MY_INITIALS) : evs;
+    filter === 'mine' ? evs.filter(e => e.user.initials === user.initials) : evs;
+
+  // Real actions from this session (always "mine")
+  const realEvents: ActivityEvent[] = eventLog.map(e => entryToEvent(e, user.name, user.initials, user.color));
+  const filteredReal = filter === 'all' || filter === 'mine' ? realEvents : [];
 
   const sections = [
-    { title: 'NOW',           events: filterFn(nowEvents)          },
-    { title: 'EARLIER TODAY', events: filterFn(earlierTodayEvents) },
-    { title: 'YESTERDAY',     events: filterFn(yesterdayEvents)    },
-    { title: 'LAST WEEK',     events: filterFn(lastWeekEvents)     },
-    { title: 'A MONTH AGO',   events: filterFn(monthAgoEvents)     },
+    { title: 'EARLIER TODAY', events: filterFn(substituteUser(earlierTodayEvents)) },
+    { title: 'YESTERDAY',     events: filterFn(substituteUser(yesterdayEvents))    },
+    { title: 'LAST WEEK',     events: filterFn(substituteUser(lastWeekEvents))     },
+    { title: 'A MONTH AGO',   events: filterFn(substituteUser(monthAgoEvents))     },
   ];
 
-  const hasAny = sections.some(s => s.events.length > 0);
+  const hasAny = filteredReal.length > 0 || sections.some(s => s.events.length > 0);
 
   return (
     <div className="flex flex-col w-full h-full">
@@ -488,15 +534,21 @@ function EventLogTab() {
       <Separator className="m-0 shrink-0" />
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        {hasAny
-          ? sections.map(s => <ActivitySection key={s.title} title={s.title} events={s.events} />)
-          : (
-            <div className="flex flex-col items-center justify-center h-32 px-6 text-center gap-2">
-              <p className="text-[12px] text-[#9c99a9]">No activity yet.</p>
-              <p className="text-[11px] text-[#b5b3bf]">Actions performed in this workspace will appear here.</p>
-            </div>
-          )
-        }
+        {hasAny ? (
+          <>
+            {/* ── Live events from this session ── */}
+            {filteredReal.length > 0 && (
+              <ActivitySection title="THIS SESSION" events={filteredReal} />
+            )}
+            {/* ── Historical mock events ── */}
+            {sections.map(s => <ActivitySection key={s.title} title={s.title} events={s.events} />)}
+          </>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-32 px-6 text-center gap-2">
+            <p className="text-[12px] text-[#9c99a9]">No activity yet.</p>
+            <p className="text-[11px] text-[#b5b3bf]">Actions performed in this workspace will appear here.</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -572,10 +624,14 @@ function CommentInputField({
   value,
   onChange,
   onSubmit,
+  userInitials,
+  userColor,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSubmit: () => void;
+  userInitials?: string;
+  userColor?: string;
 }) {
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     // Enter alone → submit. Shift+Enter → newline (default textarea behaviour).
@@ -587,8 +643,11 @@ function CommentInputField({
 
   return (
     <div className="flex items-start gap-3 px-4 py-3 w-full">
-      <div className="w-7 h-7 rounded-full bg-[#7BB3E0] flex items-center justify-center shrink-0 mt-0.5">
-        <span className="text-[10px] font-semibold text-white">LM</span>
+      <div
+        className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+        style={{ backgroundColor: userColor ?? '#7BB3E0' }}
+      >
+        <span className="text-[10px] font-semibold text-white">{userInitials ?? 'YO'}</span>
       </div>
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <textarea
@@ -643,6 +702,7 @@ function CanvasCommentRow({
   addCommentReply:  (commentId: string, text: string) => void;
 }) {
   const [replyText, setReplyText] = useState('');
+  const { user } = useCurrentUser();
 
   function submitReply() {
     if (!replyText.trim()) return;
@@ -675,7 +735,7 @@ function CanvasCommentRow({
         <div className="flex-1 min-w-0 flex flex-col gap-1">
           <div className="flex items-baseline justify-between gap-2">
             <span className={`text-[12px] font-semibold truncate ${comment.resolved ? 'text-[#9c99a9]' : 'text-[#1f1d25]'}`}>
-              Lucas
+              {user.name}
             </span>
             <span className="text-[10px] text-[#9c99a9] shrink-0">{comment.timestamp}</span>
           </div>
@@ -740,7 +800,7 @@ function CanvasCommentRow({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2 mb-0.5">
-                  <span className="text-[11px] font-semibold text-[#1f1d25]">Lucas</span>
+                  <span className="text-[11px] font-semibold text-[#1f1d25]">{user.name}</span>
                   <span className="text-[10px] text-[#9c99a9]">{reply.timestamp}</span>
                 </div>
                 <p className="text-[12px] text-[#686576] leading-[1.4] break-words">{reply.text}</p>
@@ -750,8 +810,11 @@ function CanvasCommentRow({
 
           {/* Reply input */}
           <div className="flex items-start gap-2.5 pt-2 border-t border-[rgba(0,0,0,0.06)]">
-            <div className="w-5 h-5 rounded-full bg-[#7BB3E0] flex items-center justify-center shrink-0 mt-1">
-              <span className="text-[8px] font-semibold text-white">LM</span>
+            <div
+              className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-1"
+              style={{ backgroundColor: user.color }}
+            >
+              <span className="text-[8px] font-semibold text-white">{user.initials}</span>
             </div>
             <div className="flex-1 min-w-0 flex flex-col gap-1.5">
               <textarea
@@ -789,17 +852,25 @@ function CommentsTab() {
     toggleCanvasCommentResolved, setHighlightedCommentId, addCommentReply,
     switchCanvasPage,
   } = useDesignWorkspace();
+  const { user } = useCurrentUser();
 
   const [filter, setFilter] = useState<CommentFilter>('all');
   const [commentText, setCommentText] = useState('');
-  const [panelComments, setPanelComments] = useState<Comment[]>(mockComments);
+  // Replace "Lucas" placeholder in initial mock comments with the current user
+  const [panelComments, setPanelComments] = useState<Comment[]>(() =>
+    mockComments.map(c =>
+      c.user.initials === 'LM'
+        ? { ...c, user: { name: user.name, initials: user.initials, avatarColor: user.color } }
+        : c
+    )
+  );
   const listRef = useRef<HTMLDivElement>(null);
 
   function handleSubmit() {
     if (!commentText.trim()) return;
     setPanelComments(prev => [{
       id:        `c${Date.now()}`,
-      user:      { name: 'Lucas', initials: MY_INITIALS, avatarColor: AVATAR_COLORS.lucas },
+      user:      { name: user.name, initials: user.initials, avatarColor: user.color },
       text:      commentText.trim(),
       timestamp: 'just now',
       resolved:  false,
@@ -824,7 +895,7 @@ function CommentsTab() {
 
   // Filter panel comments
   const filteredPanel = panelComments.filter(c => {
-    if (filter === 'mine')     return c.user.initials === MY_INITIALS;
+    if (filter === 'mine')     return c.user.initials === user.initials;
     if (filter === 'open')     return !c.resolved;
     if (filter === 'resolved') return c.resolved;
     return true;
@@ -918,6 +989,8 @@ function CommentsTab() {
           value={commentText}
           onChange={setCommentText}
           onSubmit={handleSubmit}
+          userInitials={user.initials}
+          userColor={user.color}
         />
       </div>
     </div>
@@ -929,13 +1002,27 @@ function CommentsTab() {
 // ══════════════════════════════════════════════════════════════════
 
 export function ActivityPanel() {
-  const { activityPanelTab, setActivityPanelTab } = useDesignWorkspace();
+  const {
+    activityPanelTab, setActivityPanelTab,
+    setCommentMode, setHighlightedCommentId,
+  } = useDesignWorkspace();
+
+  function handleTabChange(v: string) {
+    const tab = v as 'pages' | 'eventLog' | 'comments';
+    setActivityPanelTab(tab);
+    if (tab === 'comments') {
+      setCommentMode(true);
+    } else {
+      setCommentMode(false);
+      setHighlightedCommentId(null);
+    }
+  }
 
   return (
     <div className="flex flex-col w-full h-full overflow-hidden">
       <Tabs
         value={activityPanelTab}
-        onValueChange={v => setActivityPanelTab(v as 'pages' | 'eventLog' | 'comments')}
+        onValueChange={handleTabChange}
         className="flex flex-col flex-1 overflow-hidden"
       >
         {/* ── Tab bar ──────────────────────────────────────────── */}
