@@ -3,6 +3,7 @@ import { LeftRail } from './components/LeftRail';
 import { LeftPane } from './components/LeftPane';
 import { CanvasArea } from './components/CanvasArea';
 import { RightPanel } from './components/RightPanel';
+import { PreviewPanel } from './components/PreviewPanel';
 import { Timeline } from './components/Timeline';
 import { useInsertMenuShortcuts } from './hooks/useInsertMenuShortcuts';
 import { useCanvasKeyboardShortcuts } from './hooks/useCanvasKeyboardShortcuts';
@@ -25,8 +26,11 @@ function DesignWorkspaceLayout() {
         {/* Floating left pane */}
         <LeftPane />
 
-        {/* Floating right panel */}
+        {/* Floating right panel — hidden when preview mode is active */}
         <RightPanel />
+
+        {/* Preview panel — shown when preview mode is active */}
+        <PreviewPanel />
 
         {/* Floating timeline — bottom, between LeftPane and RightPanel */}
         <Timeline />

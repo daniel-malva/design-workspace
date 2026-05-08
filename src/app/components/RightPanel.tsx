@@ -674,9 +674,13 @@ export function RightPanel() {
     activePanel,
     canvasElements,
     activityPanelOpen,
+    isPreviewMode,
   } = useDesignWorkspace();
 
   // ── Priority-based visibility ─────────────────────────────────────
+  // Hide completely when preview mode is active — PreviewPanel takes over
+  if (isPreviewMode) return null;
+
   const isSettings        = activePanel === 'settings';
   const isConfigure       = activePanel === 'configure';
   const hasSingleSelection = selectedElementIds.length === 1;
