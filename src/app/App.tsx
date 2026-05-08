@@ -23,7 +23,7 @@ function DesignWorkspaceLayout() {
       {/* Canvas region — all overlays live here as absolute children */}
       <div
         className="relative flex-1 overflow-hidden transition-colors duration-300 ease-in-out"
-        style={{ backgroundColor: isPreviewMode ? '#888888' : '#E8E8E8' }}
+        style={{ backgroundColor: isPreviewMode ? '#595959' : '#E8E8E8' }}
       >
         {/* Infinite pan/zoom canvas */}
         <CanvasArea />

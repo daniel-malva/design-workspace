@@ -13,6 +13,7 @@ import { defaultLayerName } from '../store/useDesignWorkspaceStore';
 import { InsertSubPanel } from './InsertSubPanels';
 import { ImagesVideoOverflowMenu } from './ImagesVideoOverflowMenu';
 import { downloadSingleHtml5, downloadHtml5Zip } from '../utils/html5Export';
+import { PagesTab } from './ActivityPanel';
 
 interface InsertItem {
   id: InsertMenuItem;
@@ -829,6 +830,14 @@ export function LeftPane() {
   const panelContent: Record<string, React.ReactNode> = {
     insert:    <InsertPanel />,
     layers:    <LayersPanel />,
+    pages:     (
+      <>
+        <div className="px-4 py-3 border-b border-[#E2E2E2] shrink-0">
+          <p className="text-[13px] font-semibold text-[#111111]">Pages</p>
+        </div>
+        <PagesTab />
+      </>
+    ),
     brandKit:  <BrandKitPanel />,
     configure: <ConfigurePanel />,
     export:    <ExportPanel />,

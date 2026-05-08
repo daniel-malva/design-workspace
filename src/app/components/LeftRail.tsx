@@ -1,6 +1,6 @@
 import {
   Plus, Layers, Palette, Upload, Settings,
-  Clock, ArrowLeft,
+  Clock, ArrowLeft, LayoutGrid,
 } from 'lucide-react';
 import { FitScreenIcon } from './icons/FitScreenIcon';
 import { useDesignWorkspace, LeftRailItem } from '../store/useDesignWorkspaceStore';
@@ -14,6 +14,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: 'insert',    icon: <Plus size={18} />,            label: 'Insert'    },
   { id: 'layers',    icon: <Layers size={18} />,          label: 'Layers'    },
+  { id: 'pages',     icon: <LayoutGrid size={18} />,      label: 'Pages'     },
   { id: 'brandKit',  icon: <Palette size={18} />,         label: 'Brand Kit' },
   { id: 'configure', icon: <FitScreenIcon size={18} />,   label: 'Configure' },
   { id: 'export',    icon: <Upload size={18} />,          label: 'Export'    },

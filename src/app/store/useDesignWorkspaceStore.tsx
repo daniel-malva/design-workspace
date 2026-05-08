@@ -2,7 +2,7 @@ import React, { useState, useContext, createContext, useCallback, useRef } from 
 
 // ─── Types ────────────────────────────────────────────────────────
 export type LeftRailItem =
-  | 'insert' | 'layers' | 'brandKit'
+  | 'insert' | 'layers' | 'pages' | 'brandKit'
   | 'configure' | 'export' | 'settings';
 
 export type CanvasElementType =

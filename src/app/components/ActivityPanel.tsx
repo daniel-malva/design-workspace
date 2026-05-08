@@ -65,7 +65,7 @@ const TAB_CLS = `
 // TAB 1 — PAGES OVERVIEW  (template canvas pages)
 // ══════════════════════════════════════════════════════════════════
 
-function PagesTab() {
+export function PagesTab() {
   const {
     canvasPages, activePageId, canvasElements,
     switchCanvasPage, addCanvasPage, renameCanvasPage,
@@ -107,7 +107,7 @@ function PagesTab() {
   // ── Grid view ─────────────────────────────────────────────────
   if (viewMode === 'grid') {
     return (
-      <div className="flex flex-col w-full h-full">
+      <div className="flex flex-col w-full flex-1 min-h-0">
         <PageToolbar viewMode={viewMode} onViewChange={setViewMode} count={canvasPages.length} onAdd={addCanvasPage} />
         <Separator className="m-0 shrink-0" />
 
@@ -195,7 +195,7 @@ function PagesTab() {
 
   // ── List view ────────────────────────────────────────────────
   return (
-    <div className="flex flex-col w-full h-full">
+    <div className="flex flex-col w-full flex-1 min-h-0">
       <PageToolbar viewMode={viewMode} onViewChange={setViewMode} count={canvasPages.length} onAdd={addCanvasPage} />
       <Separator className="m-0 shrink-0" />
 
