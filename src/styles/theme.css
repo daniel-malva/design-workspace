@@ -179,3 +179,16 @@
     line-height: 1.5;
   }
 }
+
+/* ── Design Workspace brand tokens (available as Tailwind utilities) ── */
+@theme inline {
+  --color-dw-accent:       #5B4EFF;
+  --color-dw-accent-hover: #4a3ee0;
+  --color-dw-accent-dark:  #473bab;
+  --color-dw-text:         #1f1d25;
+  --color-dw-text-2:       #686576;
+  --color-dw-text-3:       #9c99a9;
+  --color-dw-border:       #E2E2E2;
+  --color-dw-surface:      #f9fafa;
+  --color-dw-canvas-bg:    #E8E8E8;
+}

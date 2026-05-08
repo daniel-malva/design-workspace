@@ -14,17 +14,10 @@ import { ActivityPanel } from './ActivityPanel';
 import { RightPanelHeader } from './RightPanelHeader';
 import { MultiSelectionPanel } from './MultiSelectionPanel';
 import { ColorSwatchButton } from './ColorSwatchButton';
+import { Separator } from './ui/separator';
 
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
 import type { CanvasElement } from '../store/useDesignWorkspaceStore';
-
-// ═══════════════════════════════════════════════════════════════════
-// SHARED HELPERS
-// ═══════════════════════════════════════════════════════════════════
-
-function Divider() {
-  return <div className="w-full h-px bg-[#E2E2E2] my-2" />;
-}
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="text-[11px] font-semibold text-[#111111] mb-2">{children}</p>;
@@ -115,7 +108,7 @@ function PositionSection({ element }: { element: CanvasElement | undefined }) {
         <FieldInput label="H" value={Math.round(element?.height ?? 0)} onChange={v => update('height', v)} />
       </div>
 
-      <Divider />
+      <Separator className="my-2" />
 
       {/* Layer */}
       <div className="flex items-center justify-between mb-2">
@@ -176,14 +169,14 @@ function TextPropertiesPanel({ element }: { element: CanvasElement | undefined }
     <>
       <PositionSection element={element} />
 
-      <Divider />
+      <Separator className="my-2" />
 
       {/* Brand */}
       <div className="mb-3 w-full">
         <BrandKitSelector value={brandKit} onChange={setBrandKit} label="Brand" />
       </div>
 
-      <Divider />
+      <Separator className="my-2" />
 
       {/* Text */}
       <div className="flex items-center justify-between mb-2">
@@ -311,7 +304,7 @@ function TextPropertiesPanel({ element }: { element: CanvasElement | undefined }
         </AlignBtn>
       </div>
 
-      <Divider />
+      <Separator className="my-2" />
 
       {/* Style — Fill */}
       <SectionLabel>Style</SectionLabel>
@@ -360,7 +353,7 @@ function TextPropertiesPanel({ element }: { element: CanvasElement | undefined }
         <button className="text-[#6B6B6B] hover:text-[#111111]"><Plus size={12} /></button>
       </div>
 
-      <Divider />
+      <Separator className="my-2" />
 
       {/* Shadow */}
       <div className="flex items-center justify-between mb-2 w-full">
@@ -416,7 +409,7 @@ function ShapePropertiesPanel({ element }: { element: CanvasElement | undefined 
     <>
       <PositionSection element={element} />
 
-      <Divider />
+      <Separator className="my-2" />
 
       <SectionLabel>Style</SectionLabel>
 
@@ -453,7 +446,7 @@ function ShapePropertiesPanel({ element }: { element: CanvasElement | undefined 
         <button className="text-[#6B6B6B] hover:text-[#111111]"><Plus size={12} /></button>
       </div>
 
-      <Divider />
+      <Separator className="my-2" />
 
       <div className="flex items-center justify-between mb-2 w-full">
         <span className="text-[11px] text-[#6B6B6B]">Shadow</span>
@@ -474,7 +467,7 @@ function IconPropertiesPanel({ element }: { element: CanvasElement | undefined }
     <>
       <PositionSection element={element} />
 
-      <Divider />
+      <Separator className="my-2" />
 
       <SectionLabel>Icon</SectionLabel>
       {element?.iconSrc && (
@@ -504,7 +497,7 @@ function IconPropertiesPanel({ element }: { element: CanvasElement | undefined }
         </div>
       </div>
 
-      <Divider />
+      <Separator className="my-2" />
 
       <div className="flex items-center justify-between mb-2 w-full">
         <span className="text-[11px] text-[#6B6B6B]">Shadow</span>
@@ -525,7 +518,7 @@ function LinePropertiesPanel({ element }: { element: CanvasElement | undefined }
     <>
       <PositionSection element={element} />
 
-      <Divider />
+      <Separator className="my-2" />
 
       <SectionLabel>Line Style</SectionLabel>
       <div className="relative mb-3 w-full">
@@ -578,7 +571,7 @@ function GenericPropertiesPanel({ element }: { element: CanvasElement | undefine
     <>
       <PositionSection element={element} />
 
-      <Divider />
+      <Separator className="my-2" />
 
       <div className="flex flex-col items-center justify-center py-6 text-center">
         <p className="text-[12px] text-[#9CA3AF]">Properties for this element type will appear here.</p>

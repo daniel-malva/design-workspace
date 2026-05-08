@@ -82,12 +82,32 @@ const VAR_PATTERN = /\{([^{}]+)\}/g;
  *   jellybean, media) becomes one entry. Name is the live editable layer name.
  */
 export function useConfigureVariables() {
-  const { canvasElements, masterElements, audioPlaceholderInTimeline } = useDesignWorkspace();
+  const {
+    canvasElements, masterElements, audioPlaceholderInTimeline,
+    canvasPages, activePageId,
+  } = useDesignWorkspace();
 
-  // Always scan the master template for variables — not the current canvas view.
+  // Always scan the MASTER template for variables — not the current canvas view.
   // When on a variant, canvasElements contains substituted values (e.g. "2026" not "{Year}"),
   // which would make textVariables empty and trigger a cleanup→regenerate loop.
-  const sourceElements = masterElements.length > 0 ? masterElements : canvasElements;
+  //
+  // Multi-page: aggregate master elements from ALL canvas pages so that variables
+  // defined on Canvas 2, 3, … are also detected and mapped to feed columns.
+  //   • Active page  → canvasElements (master) or masterElements (while on variant)
+  //   • Other pages  → page.elementSnapshot (saved whenever the user navigates away
+  //                    from that page on master; never overwritten by variant data
+  //                    because switchCanvasPage skips saveCurrentPageData on variants)
+  const activePageMasterEls = masterElements.length > 0 ? masterElements : canvasElements;
+
+  const sourceElements = useMemo(() => {
+    const all: typeof canvasElements = [...activePageMasterEls];
+    for (const page of canvasPages) {
+      if (page.id !== activePageId) {
+        all.push(...page.elementSnapshot);
+      }
+    }
+    return all;
+  }, [canvasPages, activePageId, activePageMasterEls]);
 
   // ── Text variables ─────────────────────────────────────────────
   const textVariables = useMemo<TextVariable[]>(() => {
