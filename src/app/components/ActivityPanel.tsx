@@ -321,31 +321,33 @@ export function PagesTab() {
                     />
                   )}
 
-                  {/* ── Mini canvas — clickable area ── */}
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => switchCanvasPage(page.id)}
-                    onDoubleClick={() => startRename(page.id, page.name)}
-                    onKeyDown={e => e.key === 'Enter' && switchCanvasPage(page.id)}
-                    className="mx-2.5 mb-2.5 overflow-hidden bg-white rounded-lg cursor-pointer relative"
-                    style={{ height: GRID_H }}
-                  >
-                    <MiniCanvas
-                      elements={els}
-                      canvasW={canvasWidth}
-                      canvasH={canvasHeight}
-                      thumbW={GRID_W - 2}
-                      thumbH={GRID_H}
-                    />
-                    {/* "active" pill */}
-                    {isActive && (
-                      <div className="absolute top-1.5 right-1.5">
-                        <span className="bg-[#5B4EFF] text-white text-[8px] font-semibold px-1.5 py-0.5 rounded-full leading-none">
-                          active
-                        </span>
-                      </div>
-                    )}
+                  {/* ── Mini canvas — centered, fixed width ── */}
+                  <div className="flex justify-center pb-2.5">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => switchCanvasPage(page.id)}
+                      onDoubleClick={() => startRename(page.id, page.name)}
+                      onKeyDown={e => e.key === 'Enter' && switchCanvasPage(page.id)}
+                      className="overflow-hidden bg-white rounded-lg cursor-pointer relative shrink-0"
+                      style={{ width: GRID_W, height: GRID_H }}
+                    >
+                      <MiniCanvas
+                        elements={els}
+                        canvasW={canvasWidth}
+                        canvasH={canvasHeight}
+                        thumbW={GRID_W}
+                        thumbH={GRID_H}
+                      />
+                      {/* "active" pill */}
+                      {isActive && (
+                        <div className="absolute top-1.5 right-1.5">
+                          <span className="bg-[#5B4EFF] text-white text-[8px] font-semibold px-1.5 py-0.5 rounded-full leading-none">
+                            active
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
