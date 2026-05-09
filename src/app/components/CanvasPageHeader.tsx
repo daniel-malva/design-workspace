@@ -75,19 +75,18 @@ export function CanvasPageHeader({
     ? (activeVariant?.name ?? 'Variant')
     : page.name;
 
-  // Close on outside click
+  // Close on outside click — capture phase so canvas stopPropagation doesn't block it
   useEffect(() => {
     if (!menuOpen) return;
     function handleOutside(e: MouseEvent) {
       if (
-        menuRef.current   && !menuRef.current.contains(e.target as Node) &&
-        triggerRef.current && !triggerRef.current.contains(e.target as Node)
-      ) {
-        setMenuOpen(false);
-      }
+        menuRef.current    && menuRef.current.contains(e.target as Node)    ||
+        triggerRef.current && triggerRef.current.contains(e.target as Node)
+      ) return;
+      setMenuOpen(false);
     }
-    const t = setTimeout(() => document.addEventListener('mousedown', handleOutside), 50);
-    return () => { clearTimeout(t); document.removeEventListener('mousedown', handleOutside); };
+    document.addEventListener('mousedown', handleOutside, true);
+    return () => document.removeEventListener('mousedown', handleOutside, true);
   }, [menuOpen]);
 
   function startRename() {
