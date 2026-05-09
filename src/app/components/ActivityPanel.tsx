@@ -239,8 +239,8 @@ export function PagesTab() {
                   onDrop={e => handleDrop(e, page.id)}
                   onDragEnd={reset}
                   className="relative rounded-xl transition-all shrink-0"
-                  style={{ width: CARD_W }}
                   style={{
+                    width: CARD_W,
                     backgroundColor: isActive ? 'rgba(91,78,255,0.09)' : 'rgba(91,78,255,0.04)',
                     border: isDragOver
                       ? '1.5px solid #5B4EFF'
