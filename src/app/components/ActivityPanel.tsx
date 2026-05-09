@@ -257,7 +257,7 @@ export function PagesTab() {
                   }}
                 >
                   {/* ── Card header row ── */}
-                  <div className="flex items-center gap-1.5 px-2.5 pt-2.5 pb-2">
+                  <div className="flex items-center gap-1.5 px-2.5 pt-2.5 pb-2 min-w-0 overflow-hidden">
                     <GripVertical
                       size={13}
                       className="text-[#C5C2D0] shrink-0 cursor-grab active:cursor-grabbing"
