@@ -266,7 +266,7 @@ function SelectField({ value, options, onChange, className = '' }: {
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="w-full appearance-none bg-white border border-[#E2E2E2] rounded-lg pl-3 pr-8 py-1.5 text-[11px] text-[#1f1d25] cursor-pointer outline-none focus:border-[#5B4EFF] transition-colors"
+        className="w-full appearance-none bg-[#f4f5f6] border border-[#cac9cf] rounded pl-2 pr-7 text-[12px] text-[#1f1d25] cursor-pointer outline-none focus:border-[#5B4EFF] transition-colors min-h-[36px]"
       >
         {options.map(o => (
           <option key={o.value} value={o.value}>{o.label}</option>
@@ -274,7 +274,7 @@ function SelectField({ value, options, onChange, className = '' }: {
       </select>
       <ChevronDown
         size={12}
-        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#686576] pointer-events-none"
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-[#686576] pointer-events-none"
       />
     </div>
   );
@@ -528,20 +528,29 @@ function AdvancedView({
         <SectionCard>
           <SectionHeader label="Text generation" />
           <div className="border-t border-[#E2E2E2] px-3 pb-3 pt-2 flex flex-col gap-3">
-            <div className="flex rounded-lg overflow-hidden border border-[#E2E2E2] bg-white">
-              {segLengths.map(({ value, label }) => (
-                <button
-                  key={value}
-                  onClick={() => change({ textLength: value })}
-                  className={`flex-1 text-[10px] font-medium py-1.5 transition-colors ${
-                    config.textLength === value
-                      ? 'bg-[#5B4EFF] text-white'
-                      : 'text-[#686576] hover:bg-[#f0eff8]'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+            {/* Individual chip pills — per Figma design tokens */}
+            <div className="flex items-center gap-1 flex-wrap">
+              {segLengths.map(({ value, label }) => {
+                const sel = config.textLength === value;
+                return (
+                  <button
+                    key={value}
+                    onClick={() => change({ textLength: value })}
+                    className="flex items-center min-h-[24px] max-h-[24px] px-1 py-[3px] rounded-[8px] transition-colors shrink-0"
+                    style={{
+                      backgroundColor: sel ? '#473bab' : 'transparent',
+                      border: `1px solid #473bab`,
+                    }}
+                  >
+                    <span
+                      className="px-1.5 text-[11px] leading-[18px] tracking-[0.16px] font-normal whitespace-nowrap"
+                      style={{ color: sel ? 'white' : '#473bab' }}
+                    >
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             <button
               onClick={() => change({ forceLineBreaks: !config.forceLineBreaks })}
@@ -630,7 +639,7 @@ function AdvancedView({
                 <label className="block text-[10px] text-[#9c99a9] mb-1.5 font-medium">Number Formatting</label>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[9px] text-[#C5C2D0] mb-1">Decimal</label>
+                    <label className="block text-[9px] text-[#C5C2D0] mb-1">Decimal Separator</label>
                     <SelectField
                       value={config.numberFmt.decimal}
                       options={[{ value: '.', label: '.' }, { value: ',', label: ',' }]}
@@ -638,7 +647,7 @@ function AdvancedView({
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] text-[#C5C2D0] mb-1">Thousands</label>
+                    <label className="block text-[9px] text-[#C5C2D0] mb-1">Thousand Separator</label>
                     <SelectField
                       value={config.numberFmt.thousand}
                       options={[
@@ -740,21 +749,45 @@ function AdvancedView({
                   onChange={v => change({ dateFormat: v })}
                 />
               </div>
+
+              {/* Preview box — inside Regional Format, per Figma */}
+              <div
+                className="flex flex-col gap-2 rounded-[12px] p-3 w-full"
+                style={{
+                  backgroundColor: 'rgba(99,86,225,0.04)',
+                  border: '1px solid rgba(99,86,225,0.5)',
+                }}
+              >
+                <p className="text-[12px] text-[#1f1d25] tracking-[0.17px] leading-[1.43]">Preview</p>
+                <div className="flex flex-col gap-0 w-full tracking-[0.15px]">
+                  {/* Row 1 */}
+                  <div className="flex items-center gap-1 w-full">
+                    <p className="flex-1 min-w-0 text-[16px] leading-[1.75] text-[#1f1d25]">
+                      {previewPrice.replace(/\.\d+$/, '')}
+                      <span className="text-[#686576]">
+                        {previewPrice.match(/\.\d+$/)?.[0] ?? '.50'}
+                      </span>
+                    </p>
+                    <p className="flex-1 min-w-0 text-[16px] leading-[1.75] text-[#1f1d25]">
+                      {previewOfferPct} APR
+                    </p>
+                  </div>
+                  {/* Row 2 */}
+                  <div className="flex items-start gap-1 w-full">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[16px] leading-[1.75] text-[#1f1d25]">10,000</p>
+                      <p className="text-[11px] leading-[1.66] text-[#686576] tracking-[0.4px]">
+                        {config.distanceUnit.toLowerCase()}/year
+                      </p>
+                    </div>
+                    <p className="flex-1 min-w-0 text-[16px] leading-[1.75] text-[#1f1d25]">
+                      {previewDate}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
-        </SectionCard>
-
-        {/* Preview row */}
-        <SectionCard>
-          <SectionHeader label="Preview" />
-          <div className="border-t border-[#E2E2E2] px-3 py-2.5">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              <span className="text-[12px] font-semibold text-[#1f1d25]">{previewPrice}</span>
-              <span className="text-[12px] font-semibold text-[#1f1d25]">{previewOfferPct} APR</span>
-              <span className="text-[11px] text-[#686576]">10,000 {config.distanceUnit.toLowerCase()}/year</span>
-              <span className="text-[11px] text-[#686576]">{previewDate}</span>
-            </div>
-          </div>
         </SectionCard>
       </div>
 
