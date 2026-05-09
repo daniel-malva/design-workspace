@@ -9,7 +9,7 @@ export function AllCanvasFrames() {
     canvasPages, activePageId,
     activeVariantId, variants,
     canvasElements,
-    addCanvasPage, duplicateCanvasPage, deleteCanvasPage, renameCanvasPage,
+    addCanvasPage, duplicateCanvasPage, deleteCanvasPage, renameCanvasPage, reorderCanvasPages,
     switchCanvasPage,
   } = useDesignWorkspace();
 
@@ -53,6 +53,7 @@ export function AllCanvasFrames() {
                 duplicateCanvasPage={duplicateCanvasPage}
                 deleteCanvasPage={deleteCanvasPage}
                 renameCanvasPage={renameCanvasPage}
+                reorderCanvasPages={reorderCanvasPages}
               />
             </div>
 
