@@ -220,13 +220,15 @@ export function PagesTab() {
         <Separator className="m-0 shrink-0" />
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="flex flex-col gap-2.5 p-3">
+          <div className="flex flex-col items-center gap-2.5 py-3">
             {canvasPages.map((page, idx) => {
               const isActive   = page.id === activePageId;
               const isRenaming = renamingId === page.id;
               const isDragging = draggingId === page.id;
               const isDragOver = dragOverId === page.id && draggingId !== page.id;
               const els        = getPageElements(page);
+              // Card hugs the thumbnail: fixed width = thumb + 10px padding each side
+              const CARD_W = GRID_W + 20;
 
               return (
                 <div
@@ -236,7 +238,8 @@ export function PagesTab() {
                   onDragOver={e => handleDragOver(e, page.id)}
                   onDrop={e => handleDrop(e, page.id)}
                   onDragEnd={reset}
-                  className="relative w-full rounded-xl transition-all"
+                  className="relative rounded-xl transition-all shrink-0"
+                  style={{ width: CARD_W }}
                   style={{
                     backgroundColor: isActive ? 'rgba(91,78,255,0.09)' : 'rgba(91,78,255,0.04)',
                     border: isDragOver
@@ -321,15 +324,15 @@ export function PagesTab() {
                     />
                   )}
 
-                  {/* ── Mini canvas — centered, fixed width ── */}
-                  <div className="flex justify-center pb-2.5">
+                  {/* ── Mini canvas — fills the padded inner width ── */}
+                  <div className="px-2.5 pb-2.5">
                     <div
                       role="button"
                       tabIndex={0}
                       onClick={() => switchCanvasPage(page.id)}
                       onDoubleClick={() => startRename(page.id, page.name)}
                       onKeyDown={e => e.key === 'Enter' && switchCanvasPage(page.id)}
-                      className="overflow-hidden bg-white rounded-lg cursor-pointer relative shrink-0"
+                      className="overflow-hidden bg-white rounded-lg cursor-pointer relative"
                       style={{ width: GRID_W, height: GRID_H }}
                     >
                       <MiniCanvas
