@@ -146,7 +146,7 @@ export function PagesTab() {
 
   // Thumbnail dimensions — preserve canvas aspect ratio
   // Single-column layout: +~30% larger than original 2-col size, then −10%
-  const GRID_W = 180;
+  const GRID_W = 162;
   const GRID_H = Math.max(90, Math.round(GRID_W * canvasHeight / canvasWidth));
   const LIST_W = 56;
   const LIST_H = Math.max(32, Math.round(LIST_W * canvasHeight / canvasWidth));
