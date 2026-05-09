@@ -7,7 +7,7 @@ import type { CanvasComment } from '../store/useDesignWorkspaceStore';
 import { MiniCanvas } from './PageStrip';
 import {
   AVATAR_COLORS, CATEGORY_COLORS,
-  earlierTodayEvents, yesterdayEvents, lastWeekEvents, monthAgoEvents, mockComments,
+  nowEvents, earlierTodayEvents, yesterdayEvents, lastWeekEvents, monthAgoEvents, mockComments,
 } from '../constants/mockData';
 import type { ActivityUser, ActivityEvent, Comment } from '../constants/mockData';
 
