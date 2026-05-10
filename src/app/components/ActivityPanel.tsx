@@ -3,7 +3,7 @@ import { Send, LayoutGrid, List, CheckCircle2, Circle, Plus, Check, X, CornerDow
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { Separator } from './ui/separator';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
-import type { CanvasComment } from '../store/useDesignWorkspaceStore';
+import type { CanvasComment, SessionEvent } from '../store/useDesignWorkspaceStore';
 import { MiniCanvas } from './PageStrip';
 import {
   AVATAR_COLORS, CATEGORY_COLORS,
@@ -589,35 +589,90 @@ function ActivitySection({ title, events }: { title: string; events: ActivityEve
 
 const MY_INITIALS = 'LM';
 
+function relativeTime(createdAt: number): string {
+  const secs = Math.floor((Date.now() - createdAt) / 1000);
+  if (secs < 60)  return 'just now';
+  const mins = Math.floor(secs / 60);
+  if (mins < 60)  return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ago`;
+}
+
+function SessionEventRow({ event, tick }: { event: SessionEvent; tick: number }) {
+  // `tick` forces a re-render so the timestamp stays fresh
+  void tick;
+  return (
+    <div className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors cursor-default w-full">
+      <div
+        className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+        style={{ backgroundColor: AVATAR_COLORS.lucas }}
+      >
+        <span className="text-[11px] font-semibold text-white tracking-wide">{MY_INITIALS}</span>
+      </div>
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div className="flex items-baseline justify-between gap-2 w-full">
+          <span className="text-[13px] font-semibold text-[#1f1d25] truncate">Lucas</span>
+          <span className="text-[11px] text-[#9c99a9] shrink-0 whitespace-nowrap">
+            {relativeTime(event.createdAt)}
+          </span>
+        </div>
+        <p className="text-[12px] text-[#686576] leading-[1.4] truncate">{event.action}</p>
+        <ActivityBadge label={event.category} color={event.categoryColor} />
+      </div>
+    </div>
+  );
+}
+
 function EventLogTab() {
+  const { sessionEvents } = useDesignWorkspace();
   const [filter, setFilter] = useState<'all' | 'mine'>('all');
+  const [tick, setTick] = useState(0);
+
+  // Refresh relative timestamps every 30s
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const filterFn = (evs: ActivityEvent[]) =>
     filter === 'mine' ? evs.filter(e => e.user.initials === MY_INITIALS) : evs;
 
-  const sections = [
-    { title: 'NOW',           events: filterFn(nowEvents)          },
+  const historySections = [
     { title: 'EARLIER TODAY', events: filterFn(earlierTodayEvents) },
     { title: 'YESTERDAY',     events: filterFn(yesterdayEvents)    },
     { title: 'LAST WEEK',     events: filterFn(lastWeekEvents)     },
     { title: 'A MONTH AGO',   events: filterFn(monthAgoEvents)     },
   ];
 
-  const hasAny = sections.some(s => s.events.length > 0);
+  const hasSession  = sessionEvents.length > 0;
+  const hasHistory  = historySections.some(s => s.events.length > 0);
 
   return (
     <div className="flex flex-col w-full h-full">
       {/* Filters */}
       <div className="flex items-center gap-2 px-4 py-3 shrink-0">
-        <FilterChip label="All Activity"  active={filter === 'all'}  onClick={() => setFilter('all')} />
-        <FilterChip label="My Activity"   active={filter === 'mine'} onClick={() => setFilter('mine')} />
+        <FilterChip label="All Activity" active={filter === 'all'}  onClick={() => setFilter('all')} />
+        <FilterChip label="My Activity"  active={filter === 'mine'} onClick={() => setFilter('mine')} />
       </div>
       <Separator className="m-0 shrink-0" />
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        {hasAny
-          ? sections.map(s => <ActivitySection key={s.title} title={s.title} events={s.events} />)
-          : (
+        {/* Live session events */}
+        {hasSession && (
+          <div className="flex flex-col w-full">
+            <div className="px-4 pt-4 pb-1 shrink-0">
+              <span className="text-[11px] font-semibold text-[#9c99a9] tracking-[0.8px] uppercase">This session</span>
+            </div>
+            {sessionEvents.map(ev => (
+              <SessionEventRow key={ev.id} event={ev} tick={tick} />
+            ))}
+          </div>
+        )}
+
+        {/* Historical mock data */}
+        {hasHistory
+          ? historySections.map(s => <ActivitySection key={s.title} title={s.title} events={s.events} />)
+          : !hasSession && (
             <div className="flex flex-col items-center justify-center h-32 px-6 text-center gap-2">
               <p className="text-[12px] text-[#9c99a9]">No activity yet.</p>
               <p className="text-[11px] text-[#b5b3bf]">Actions performed in this workspace will appear here.</p>

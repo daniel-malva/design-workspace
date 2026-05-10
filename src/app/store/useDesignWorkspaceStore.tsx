@@ -291,6 +291,12 @@ export interface DesignWorkspaceState {
   /** Reorder canvas pages by providing a new ordered list of page IDs */
   reorderCanvasPages: (pageIds: string[]) => void;
 
+  // ── Live session event log ────────────────────────────────────────
+  /** All events recorded during the current editing session, newest first */
+  sessionEvents: SessionEvent[];
+  /** Record an action in the live event log */
+  logSessionEvent: (action: string, category: string, categoryColor: string) => void;
+
   // ── Comment mode ─────────────────────────────────────────────────
   /** Whether the canvas is in comment-placement mode (activated by pressing C) */
   commentMode: boolean;
@@ -493,6 +499,31 @@ function typeToLabel(type: CanvasElementType): string {
   return defaultLayerName(type);
 }
 
+/** Lightweight event entry for the live session event log */
+export interface SessionEvent {
+  id: string;
+  action: string;
+  category: string;
+  categoryColor: string;
+  createdAt: number; // Date.now()
+}
+
+function elCategory(type: CanvasElementType): string {
+  if (type.startsWith('text'))        return 'Text';
+  if (type.startsWith('placeholder')) return 'Image';
+  if (type === 'shape')               return 'Shape';
+  if (type === 'icon')                return 'Shape';
+  if (type === 'line')                return 'Shape';
+  return 'Layer';
+}
+
+function elCategoryColor(type: CanvasElementType): string {
+  if (type.startsWith('text'))        return '#F59E0B';
+  if (type.startsWith('placeholder')) return '#EC4899';
+  if (type === 'shape' || type === 'icon' || type === 'line') return '#6B7280';
+  return '#6B7280';
+}
+
 // ─── Group bounds helper ───────────────────────────────────────────
 // Recalculates the bounding box of a group from its current children.
 // Called automatically by updateElement / deleteElement / insertElement
@@ -652,6 +683,8 @@ const defaultContextValue: DesignWorkspaceState = {
   deleteCanvasPage: noop,
   renameCanvasPage: noop,
   reorderCanvasPages: noop,
+  sessionEvents: [],
+  logSessionEvent: noop,
   commentMode: false,
   canvasComments: [],
   highlightedCommentId: null,
@@ -723,6 +756,21 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   const [imagesVideoMenuTrigger, setImagesVideoMenuTrigger] = useState(0);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [sessionEvents, setSessionEvents] = useState<SessionEvent[]>([]);
+
+  // Stable ref so action callbacks can log without becoming stale
+  const logSessionEventRef = useRef<(action: string, category: string, categoryColor: string) => void>(() => {});
+  const logSessionEvent = useCallback((action: string, category: string, categoryColor: string) => {
+    setSessionEvents(prev => [{
+      id: generateId(),
+      action,
+      category,
+      categoryColor,
+      createdAt: Date.now(),
+    }, ...prev].slice(0, 100)); // keep latest 100 entries
+  }, []);
+  logSessionEventRef.current = logSessionEvent;
+
   // V56: Settings state
   const [settings, setSettings] = useState<Settings>(defaultSettings);
 
@@ -1015,6 +1063,11 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     ]);
     setSelectedElementIds([id]);
     setSelectedElementType(element.type);
+    logSessionEventRef.current(
+      `${name} added`,
+      elCategory(element.type as CanvasElementType),
+      elCategoryColor(element.type as CanvasElementType),
+    );
   }, []);
 
   const insertElementSilent = useCallback((element: Omit<CanvasElement, 'id'>) => {
@@ -1120,6 +1173,13 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
 
   const deleteElement = useCallback((id: string) => {
     takeSnapshotRef.current();        // ← snapshot BEFORE delete
+    const targetEl = canvasElementsRef.current.find(el => el.id === id);
+    if (targetEl) {
+      logSessionEventRef.current(
+        `${targetEl.name ?? defaultLayerName(targetEl.type as CanvasElementType)} deleted`,
+        'Layer', '#6B7280',
+      );
+    }
     // Track whether a group container was removed so we can clear editingGroupId
     let removedGroupId: string | null = null;
 
@@ -1211,6 +1271,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
       ]);
       setSelectedElementIds([groupId]);
       setSelectedElementType('group');
+      logSessionEventRef.current(`${ids.length} elements grouped`, 'Layer', '#6B7280');
 
       return [
         // ✅ Keep ALL existing elements — just tag the grouped ones with groupId
@@ -1252,17 +1313,20 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     });
     // Exit group-edit mode if the ungrouped group was being edited
     setEditingGroupId(gid => gid === groupId ? null : gid);
+    logSessionEventRef.current('Group ungrouped', 'Layer', '#6B7280');
   }, []);
 
   const renameElement = useCallback((id: string, name: string) => {
     takeSnapshotRef.current();        // ← snapshot BEFORE rename
+    const trimmed = name.trim();
     setCanvasElements(prev =>
       prev.map(el =>
         el.id === id
-          ? { ...el, name: name.trim() || defaultLayerName(el.type) }
+          ? { ...el, name: trimmed || defaultLayerName(el.type) }
           : el
       )
     );
+    if (trimmed) logSessionEventRef.current(`Element renamed · ${trimmed}`, 'Layer', '#6B7280');
   }, []);
 
   /**
@@ -2020,6 +2084,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setCanvasElements([]);
     setLayers([]);
     setActivePageIdState(newPageId);
+    logSessionEventRef.current(`Canvas added · ${newName}`, 'Frame', '#3B82F6');
     setSelectedElementIds([]);
     setSelectedElementType(null);
     setEditingGroupId(null);
@@ -2059,6 +2124,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     const newPageId   = generateId();
     const srcName     = canvasPagesRef.current.find(p => p.id === pageId)?.name ?? 'Canvas';
     const newPageName = `${srcName} (copy)`;
+    logSessionEventRef.current(`Canvas duplicated · ${srcName}`, 'Frame', '#3B82F6');
     const srcIndex    = canvasPagesRef.current.findIndex(p => p.id === pageId);
 
     // Save current page before navigating
@@ -2097,8 +2163,10 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     const pageIndex  = pages.findIndex(p => p.id === pageId);
 
     // Remove from state and ref storage
+    const deletedPageName = canvasPagesRef.current.find(p => p.id === pageId)?.name ?? 'Canvas';
     canvasPageDataRef.current.delete(pageId);
     setCanvasPages(prev => prev.filter(p => p.id !== pageId));
+    logSessionEventRef.current(`Canvas deleted · ${deletedPageName}`, 'Frame', '#3B82F6');
 
     // If we're deleting the currently active page, navigate away
     if (pageId === currPageId) {
@@ -2121,6 +2189,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     const trimmed = name.trim();
     if (!trimmed) return;
     setCanvasPages(prev => prev.map(p => p.id === pageId ? { ...p, name: trimmed } : p));
+    logSessionEventRef.current(`Canvas renamed · ${trimmed}`, 'Frame', '#3B82F6');
   }, []);
 
   const reorderCanvasPages = useCallback((pageIds: string[]) => {
@@ -2274,6 +2343,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setIsPreviewMode, setIsTimelineVisible, setIsTimelineExpanded, setAudioPlaceholderInTimeline,
     setActivePageId,
     switchCanvasPage, addCanvasPage, duplicateCanvasPage, deleteCanvasPage, renameCanvasPage, reorderCanvasPages,
+    sessionEvents, logSessionEvent,
     commentMode, canvasComments, highlightedCommentId,
     setCommentMode, addCanvasComment, toggleCanvasCommentResolved, setHighlightedCommentId, addCommentReply,
     setLayerVisibility, setLayerLocked, setLayerName,
