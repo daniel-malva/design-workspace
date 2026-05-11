@@ -78,43 +78,19 @@ function generateMockForVar(varName: string, textLength?: 'short' | 'medium' | '
   return `Mock ${varName}`;
 }
 
-interface MockCfg {
-  textLength?: 'short' | 'medium' | 'long';
-  offerMin?: number; offerMax?: number;
-  paymentMin?: number; paymentMax?: number;
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface VarConfig {
+  textLength:      'short' | 'medium' | 'long' | 'custom';
+  forceLineBreaks: boolean;
 }
 
-function generateAllMock(vars: string[], cfg?: MockCfg): Record<string, string> {
-  const vals: Record<string, string> = {};
-  for (const v of vars) {
-    const lv = v.toLowerCase();
-    if (lv.includes('apr') || lv.includes('offer') || lv.includes('rate')) {
-      const min = cfg?.offerMin ?? 0;
-      const max = cfg?.offerMax ?? 10;
-      vals[v] = `${(Math.random() * (max - min) + min).toFixed(1)}%`;
-    } else if (lv.includes('payment') || lv.includes('price')) {
-      const min = cfg?.paymentMin ?? 349;
-      const max = cfg?.paymentMax ?? 999;
-      const amt = Math.floor(Math.random() * (max - min) + min);
-      vals[v] = `$${amt.toLocaleString()}/mo`;
-    } else {
-      vals[v] = generateMockForVar(v, cfg?.textLength);
-    }
-  }
-  return vals;
-}
-
-// ─── Scenario presets ─────────────────────────────────────────────────────────
 type Scenario = 'custom' | 'long-copy' | 'financial-max' | 'mobile-fit' | 'compliance' | 'extreme';
 
 interface AdvancedConfig {
   scenario:          Scenario;
-  textLength:        'short' | 'medium' | 'long' | 'custom';
-  forceLineBreaks:   boolean;
-  offerMin:          number;
-  offerMax:          number;
-  paymentMin:        number;
-  paymentMax:        number;
+  varConfigs:        Record<string, VarConfig>;
+  offerPct:          number;   // 0–10
+  paymentAmt:        number;   // 349–999
   country:           string;
   numberFmt:         { decimal: string; thousand: string };
   currencyMode:      'auto' | 'custom';
@@ -125,30 +101,44 @@ interface AdvancedConfig {
   dateFormat:        string;
 }
 
-const PRESET_CONFIGS: Record<Exclude<Scenario, 'custom'>, Partial<AdvancedConfig>> = {
-  'long-copy':     { textLength: 'long',   forceLineBreaks: true,  offerMin: 0, offerMax: 5,  paymentMin: 349, paymentMax: 699 },
-  'financial-max': { textLength: 'medium', forceLineBreaks: false, offerMin: 7, offerMax: 10, paymentMin: 799, paymentMax: 999 },
-  'mobile-fit':    { textLength: 'short',  forceLineBreaks: true,  offerMin: 0, offerMax: 3,  paymentMin: 349, paymentMax: 599 },
-  compliance:      { textLength: 'long',   forceLineBreaks: false, offerMin: 0, offerMax: 5,  paymentMin: 349, paymentMax: 799 },
-  extreme:         { textLength: 'long',   forceLineBreaks: true,  offerMin: 8, offerMax: 10, paymentMin: 899, paymentMax: 999 },
-};
+function generateAllMock(
+  vars: string[],
+  varConfigs: Record<string, VarConfig>,
+  globalCfg?: { offerPct?: number; paymentAmt?: number },
+): Record<string, string> {
+  const vals: Record<string, string> = {};
+  for (const v of vars) {
+    const lv = v.toLowerCase();
+    if (lv.includes('apr') || lv.includes('offer') || lv.includes('rate')) {
+      const max = globalCfg?.offerPct ?? 10;
+      vals[v] = `${(Math.random() * max).toFixed(1)}%`;
+    } else if (lv.includes('payment') || lv.includes('price')) {
+      const max = globalCfg?.paymentAmt ?? 999;
+      const amt = Math.floor(Math.random() * (max - 349) + 349);
+      vals[v] = `$${amt.toLocaleString()}/mo`;
+    } else {
+      const vCfg = varConfigs[v];
+      const tl = (vCfg?.textLength === 'custom' ? 'medium' : vCfg?.textLength) as 'short' | 'medium' | 'long' | undefined;
+      vals[v] = generateMockForVar(v, tl);
+    }
+  }
+  return vals;
+}
 
-const DEFAULT_CONFIG: AdvancedConfig = {
-  scenario:          'long-copy',
-  textLength:        'long',
-  forceLineBreaks:   true,
-  offerMin:          0,
-  offerMax:          5,
-  paymentMin:        349,
-  paymentMax:        699,
-  country:           'USA ($/Miles)',
-  numberFmt:         { decimal: '.', thousand: ',' },
-  currencyMode:      'auto',
-  currencySymbol:    '$',
-  currencyPlacement: 'before',
-  distanceUnit:      'Miles',
-  fuelUnit:          'Gallons',
-  dateFormat:        'mm/dd/yyyy',
+// ─── Scenario presets ─────────────────────────────────────────────────────────
+interface PresetParams {
+  textLength:      VarConfig['textLength'];
+  forceLineBreaks: boolean;
+  offerPct:        number;
+  paymentAmt:      number;
+}
+
+const PRESET_CONFIGS: Record<Exclude<Scenario, 'custom'>, PresetParams> = {
+  'long-copy':     { textLength: 'long',   forceLineBreaks: true,  offerPct: 5,  paymentAmt: 699 },
+  'financial-max': { textLength: 'medium', forceLineBreaks: false, offerPct: 10, paymentAmt: 999 },
+  'mobile-fit':    { textLength: 'short',  forceLineBreaks: true,  offerPct: 3,  paymentAmt: 599 },
+  compliance:      { textLength: 'long',   forceLineBreaks: false, offerPct: 5,  paymentAmt: 799 },
+  extreme:         { textLength: 'long',   forceLineBreaks: true,  offerPct: 10, paymentAmt: 999 },
 };
 
 const SCENARIO_LABELS: Record<Scenario, string> = {
@@ -158,6 +148,21 @@ const SCENARIO_LABELS: Record<Scenario, string> = {
   'mobile-fit':    'Mobile Fit',
   compliance:      'Compliance Edge Cases',
   extreme:         'Extreme Everything',
+};
+
+const DEFAULT_CONFIG: AdvancedConfig = {
+  scenario:          'custom',
+  varConfigs:        {},
+  offerPct:          0,
+  paymentAmt:        349,
+  country:           'USA ($/Miles)',
+  numberFmt:         { decimal: '.', thousand: ',' },
+  currencyMode:      'auto',
+  currencySymbol:    '$',
+  currencyPlacement: 'before',
+  distanceUnit:      'Miles',
+  fuelUnit:          'Gallons',
+  dateFormat:        'mm/dd/yyyy',
 };
 
 // ─── Primitive UI helpers ─────────────────────────────────────────────────────
@@ -449,9 +454,76 @@ function MainView({
 }
 
 // ─── Advanced Randomization view ──────────────────────────────────────────────
-function AdvancedView({
-  config, onChange, onApply, onCancel,
+const TEXT_LENGTHS: { value: VarConfig['textLength']; label: string }[] = [
+  { value: 'short',  label: 'Short'  },
+  { value: 'medium', label: 'Medium' },
+  { value: 'long',   label: 'Long'   },
+  { value: 'custom', label: 'Custom' },
+];
+
+function VarSection({
+  varName, cfg, onChange,
 }: {
+  varName: string;
+  cfg: VarConfig;
+  onChange: (patch: Partial<VarConfig>) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-[10px]">
+      {/* Variable label */}
+      <span className="text-[14px] font-medium text-[#1f1d25] tracking-[0.1px] leading-[1.57]">
+        {`{${varName}}`}
+      </span>
+
+      {/* Text-length pills */}
+      <div className="flex items-center gap-[6px]">
+        {TEXT_LENGTHS.map(({ value, label }) => {
+          const sel = cfg.textLength === value;
+          return (
+            <button
+              key={value}
+              onClick={() => onChange({ textLength: value })}
+              className="flex items-center min-h-[28px] px-1 py-[3px] rounded-[8px] transition-colors shrink-0"
+              style={{
+                backgroundColor: sel ? '#473bab' : 'transparent',
+                border: '1px solid #473bab',
+              }}
+            >
+              <span
+                className="px-[7px] text-[11px] leading-[18px] tracking-[0.16px] font-normal whitespace-nowrap"
+                style={{ color: sel ? 'white' : '#473bab' }}
+              >
+                {label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Force line breaks checkbox */}
+      <button
+        onClick={() => onChange({ forceLineBreaks: !cfg.forceLineBreaks })}
+        className="flex items-center gap-[10px] w-full text-left"
+      >
+        <div
+          className={`w-[18px] h-[18px] rounded flex items-center justify-center border transition-colors shrink-0 ${
+            cfg.forceLineBreaks ? 'bg-[#5B4EFF] border-[#5B4EFF]' : 'border-[#cac9cf] bg-white'
+          }`}
+        >
+          {cfg.forceLineBreaks && <Check size={11} strokeWidth={2.5} className="text-white" />}
+        </div>
+        <span className="text-[14px] text-[#1f1d25] font-normal leading-[1.43] tracking-[0.15px]">
+          Force line breaks
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function AdvancedView({
+  vars, config, onChange, onApply, onCancel,
+}: {
+  vars: string[];
   config: AdvancedConfig;
   onChange: (patch: Partial<AdvancedConfig>) => void;
   onApply: () => void;
@@ -460,61 +532,75 @@ function AdvancedView({
   const [numberOpen,   setNumberOpen]   = useState(true);
   const [regionalOpen, setRegionalOpen] = useState(true);
 
-  // If user manually changes a setting, revert scenario to 'custom'
+  // Apply a general config patch, switching to 'custom' if not already
   const change = (patch: Partial<AdvancedConfig>) => {
-    if (config.scenario !== 'custom') {
-      const preset = PRESET_CONFIGS[config.scenario as Exclude<Scenario, 'custom'>];
-      const merged = { ...config, ...patch };
-      const diverged = Object.entries(preset).some(([k, v]) => (merged as Record<string, unknown>)[k] !== v);
-      onChange(diverged ? { ...patch, scenario: 'custom' } : patch);
-    } else {
-      onChange(patch);
-    }
+    onChange(config.scenario !== 'custom' ? { ...patch, scenario: 'custom' } : patch);
   };
 
+  // Update a single variable's config (always switches to custom)
+  const changeVar = (varName: string, varPatch: Partial<VarConfig>) => {
+    const newVarConfigs = {
+      ...config.varConfigs,
+      [varName]: {
+        ...(config.varConfigs[varName] ?? { textLength: 'medium' as const, forceLineBreaks: false }),
+        ...varPatch,
+      },
+    };
+    onChange({ varConfigs: newVarConfigs, scenario: 'custom' });
+  };
+
+  // When a preset scenario is selected, apply its settings to all variables
   const handleScenario = (s: Scenario) => {
     if (s === 'custom') { onChange({ scenario: 'custom' }); return; }
     const preset = PRESET_CONFIGS[s];
-    onChange({ ...preset, textLength: (preset.textLength ?? 'long') as AdvancedConfig['textLength'], scenario: s });
+    const newVarConfigs: Record<string, VarConfig> = {};
+    for (const v of vars) {
+      newVarConfigs[v] = { textLength: preset.textLength, forceLineBreaks: preset.forceLineBreaks };
+    }
+    onChange({
+      scenario:   s,
+      varConfigs: newVarConfigs,
+      offerPct:   preset.offerPct,
+      paymentAmt: preset.paymentAmt,
+    });
   };
 
-  const previewOfferPct = `${config.offerMin}–${config.offerMax}%`;
-  const previewPayment  = `$${config.paymentMin.toLocaleString()}–$${config.paymentMax.toLocaleString()}`;
-  const previewPrice    = `$${(config.paymentMin * 25 + 350).toLocaleString()}.50`;
-  const previewDate     = config.dateFormat === 'dd/mm/yyyy'
+  // ── Preview box values ─────────────────────────────────────────────────────
+  const sep1 = config.numberFmt.thousand;
+  const sep2 = config.numberFmt.decimal;
+  const sym  = config.currencySymbol;
+  const symBefore = config.currencyMode === 'auto' || config.currencyPlacement === 'before';
+  const formattedPrice = `${symBefore ? sym : ''}12${sep1}499${sep2}50${symBefore ? '' : sym}`;
+  const previewDate = config.dateFormat === 'dd/mm/yyyy'
     ? '27/02/2026'
     : config.dateFormat === 'yyyy-mm-dd' ? '2026-02-27' : '02/27/2026';
 
-  const segLengths: { value: AdvancedConfig['textLength']; label: string }[] = [
-    { value: 'short',  label: 'Short'  },
-    { value: 'medium', label: 'Medium' },
-    { value: 'long',   label: 'Long'   },
-    { value: 'custom', label: 'Custom' },
-  ];
-
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-4 pt-3.5 pb-2 shrink-0 border-b border-[#E2E2E2]">
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-1 px-3 pt-3 pb-2 min-h-[48px] shrink-0">
         <button
           onClick={onCancel}
-          className="w-6 h-6 flex items-center justify-center rounded-lg text-[#9c99a9] hover:text-[#1f1d25] hover:bg-[#f0eff8] transition-colors"
+          className="p-[5px] rounded-full hover:bg-black/5 transition-colors shrink-0"
         >
-          <ArrowLeft size={14} />
+          <ArrowLeft size={20} className="text-[#1f1d25]" />
         </button>
-        <span className="text-[13px] font-semibold text-[#1f1d25]">Advanced Randomization</span>
+        <span className="text-[16px] font-medium text-[#1f1d25] tracking-[0.15px] leading-[1.5]">
+          Advanced Randomization
+        </span>
       </div>
 
-      {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4 flex flex-col gap-3 mt-3">
+      {/* ── Scrollable body ─────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-4 flex flex-col gap-3">
 
-        <p className="text-[11px] text-[#686576] px-0.5">
+        {/* Subtitle */}
+        <p className="text-[14px] text-black leading-[1.5] tracking-[0.15px]">
           Select a scenario to auto-apply stress settings.
         </p>
 
-        {/* Scenario */}
-        <div>
-          <label className="block text-[10px] font-medium text-[#9c99a9] mb-1.5 pl-0.5 uppercase tracking-wide">
+        {/* Scenario dropdown */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[12px] text-[#686576] tracking-[0.15px] leading-[1] pl-[4px]">
             Scenario
           </label>
           <SelectField
@@ -524,136 +610,141 @@ function AdvancedView({
           />
         </div>
 
-        {/* Text Generation */}
-        <SectionCard>
-          <SectionHeader label="Text generation" />
-          <div className="border-t border-[#E2E2E2] px-3 pb-3 pt-2 flex flex-col gap-3">
-            {/* Individual chip pills — per Figma design tokens */}
-            <div className="flex items-center gap-1 flex-wrap">
-              {segLengths.map(({ value, label }) => {
-                const sel = config.textLength === value;
-                return (
-                  <button
-                    key={value}
-                    onClick={() => change({ textLength: value })}
-                    className="flex items-center min-h-[24px] max-h-[24px] px-1 py-[3px] rounded-[8px] transition-colors shrink-0"
-                    style={{
-                      backgroundColor: sel ? '#473bab' : 'transparent',
-                      border: `1px solid #473bab`,
-                    }}
-                  >
-                    <span
-                      className="px-1.5 text-[11px] leading-[18px] tracking-[0.16px] font-normal whitespace-nowrap"
-                      style={{ color: sel ? 'white' : '#473bab' }}
-                    >
-                      {label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={() => change({ forceLineBreaks: !config.forceLineBreaks })}
-              className="flex items-center gap-2.5 w-full text-left"
-            >
-              <div className={`w-4 h-4 rounded flex items-center justify-center border transition-colors shrink-0 ${
-                config.forceLineBreaks ? 'bg-[#5B4EFF] border-[#5B4EFF]' : 'border-[#C5C2D0] bg-white'
-              }`}>
-                {config.forceLineBreaks && <Check size={10} strokeWidth={2.5} className="text-white" />}
+        {/* ── Per-variable sections ──────────────────────────────────────────── */}
+        {vars.length > 0 && (
+          <div
+            className="flex flex-col p-3 rounded-[12px]"
+            style={{ border: '1px solid rgba(0,0,0,0.12)' }}
+          >
+            {vars.map((v, i) => (
+              <div key={v}>
+                {i > 0 && (
+                  <div
+                    className="my-3"
+                    style={{ height: 1, backgroundColor: 'rgba(0,0,0,0.07)' }}
+                  />
+                )}
+                <VarSection
+                  varName={v}
+                  cfg={config.varConfigs[v] ?? { textLength: 'medium', forceLineBreaks: false }}
+                  onChange={patch => changeVar(v, patch)}
+                />
               </div>
-              <span className="text-[11px] text-[#1f1d25]">Force line breaks</span>
-            </button>
+            ))}
           </div>
-        </SectionCard>
+        )}
 
-        {/* Number Generation */}
-        <SectionCard>
-          <SectionHeader
-            label="Number generation"
-            collapsible open={numberOpen}
-            onToggle={() => setNumberOpen(p => !p)}
-          />
+        {/* ── Number Generation ────────────────────────────────────────────── */}
+        <div
+          className="rounded-[12px] overflow-hidden"
+          style={{ border: '1px solid rgba(0,0,0,0.12)' }}
+        >
+          <button
+            className="flex items-center justify-between w-full px-3 py-[10px] cursor-pointer select-none"
+            onClick={() => setNumberOpen(p => !p)}
+          >
+            <span className="text-[14px] font-semibold text-[#1f1d25] tracking-[0.1px]">
+              Number generation
+            </span>
+            {numberOpen
+              ? <ChevronUp   size={16} className="text-[#686576]" />
+              : <ChevronDown size={16} className="text-[#686576]" />}
+          </button>
+
           {numberOpen && (
-            <div className="border-t border-[#E2E2E2] px-3 pb-3 pt-2 flex flex-col gap-4">
-              {/* Offer range */}
+            <div
+              className="px-3 pb-4 pt-3 flex flex-col gap-4"
+              style={{ borderTop: '1px solid rgba(0,0,0,0.12)' }}
+            >
+              {/* Offer Type Range */}
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-[11px] text-[#686576]">Offer Type Range (0-10%)</label>
-                  <span className="text-[10px] font-semibold text-[#5B4EFF]">{previewOfferPct}</span>
+                  <span className="text-[12px] text-[#1f1d25] tracking-[0.15px]">
+                    Offer Type Range (0-10%)
+                  </span>
+                  <span className="text-[12px] text-[#9c99a9]">{config.offerPct}%</span>
                 </div>
                 <RangeSlider
-                  min={0} max={10} value={config.offerMin}
-                  onChange={v => change({ offerMin: Math.min(v, config.offerMax) })}
-                />
-                <RangeSlider
-                  min={0} max={10} value={config.offerMax}
-                  onChange={v => change({ offerMax: Math.max(v, config.offerMin) })}
+                  min={0} max={10} value={config.offerPct}
+                  onChange={v => change({ offerPct: v })}
                 />
               </div>
-              {/* Payment range */}
+
+              {/* Payment Range */}
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-[11px] text-[#686576]">Payment Range ($349-$999)</label>
-                  <span className="text-[10px] font-semibold text-[#5B4EFF]">{previewPayment}</span>
+                  <span className="text-[12px] text-[#1f1d25] tracking-[0.15px]">
+                    Payment&nbsp; Range ($349-$999)
+                  </span>
+                  <span className="text-[12px] text-[#9c99a9]">${config.paymentAmt}</span>
                 </div>
                 <RangeSlider
-                  min={349} max={999} value={config.paymentMin}
-                  onChange={v => change({ paymentMin: Math.min(v, config.paymentMax) })}
-                />
-                <RangeSlider
-                  min={349} max={999} value={config.paymentMax}
-                  onChange={v => change({ paymentMax: Math.max(v, config.paymentMin) })}
+                  min={349} max={999} value={config.paymentAmt}
+                  onChange={v => change({ paymentAmt: v })}
                 />
               </div>
             </div>
           )}
-        </SectionCard>
+        </div>
 
-        {/* Regional Format */}
-        <SectionCard>
-          <SectionHeader
-            label="Regional Format"
-            collapsible open={regionalOpen}
-            onToggle={() => setRegionalOpen(p => !p)}
-          />
+        {/* ── Regional Format ──────────────────────────────────────────────── */}
+        <div
+          className="rounded-[12px] overflow-hidden"
+          style={{ border: '1px solid rgba(0,0,0,0.12)' }}
+        >
+          <button
+            className="flex items-center justify-between w-full px-3 py-[10px] cursor-pointer select-none"
+            onClick={() => setRegionalOpen(p => !p)}
+          >
+            <span className="text-[14px] font-semibold text-[#1f1d25] tracking-[0.1px]">
+              Regional Format
+            </span>
+            {regionalOpen
+              ? <ChevronUp   size={16} className="text-[#686576]" />
+              : <ChevronDown size={16} className="text-[#686576]" />}
+          </button>
+
           {regionalOpen && (
-            <div className="border-t border-[#E2E2E2] px-3 pb-3 pt-2 flex flex-col gap-3">
+            <div
+              className="px-3 pb-4 pt-3 flex flex-col gap-3"
+              style={{ borderTop: '1px solid rgba(0,0,0,0.12)' }}
+            >
               {/* Country */}
-              <div>
-                <label className="block text-[10px] text-[#9c99a9] mb-1 font-medium">Country</label>
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] text-[#686576] tracking-[0.15px]">Country</label>
                 <SelectField
                   value={config.country}
                   options={[
-                    { value: 'USA ($/Miles)',    label: '🇺🇸 USA ($/Miles)' },
-                    { value: 'Canada (CAD/km)',  label: '🇨🇦 Canada (CAD/km)' },
-                    { value: 'UK (£/Miles)',     label: '🇬🇧 UK (£/Miles)' },
-                    { value: 'Germany (€/km)',   label: '🇩🇪 Germany (€/km)' },
-                    { value: 'Brazil (R$/km)',   label: '🇧🇷 Brazil (R$/km)' },
+                    { value: 'USA ($/Miles)',   label: '🇺🇸 USA ($/Miles)'   },
+                    { value: 'Canada (CAD/km)', label: '🇨🇦 Canada (CAD/km)' },
+                    { value: 'UK (£/Miles)',    label: '🇬🇧 UK (£/Miles)'    },
+                    { value: 'Germany (€/km)',  label: '🇩🇪 Germany (€/km)'  },
+                    { value: 'Brazil (R$/km)',  label: '🇧🇷 Brazil (R$/km)'  },
                   ]}
                   onChange={v => change({ country: v })}
                 />
               </div>
 
               {/* Number Formatting */}
-              <div>
-                <label className="block text-[10px] text-[#9c99a9] mb-1.5 font-medium">Number Formatting</label>
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] text-[#686576] tracking-[0.15px]">Number Formatting</label>
                 <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[9px] text-[#C5C2D0] mb-1">Decimal Separator</label>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[12px] text-[#9c99a9]">Decimal Separator</label>
                     <SelectField
                       value={config.numberFmt.decimal}
                       options={[{ value: '.', label: '.' }, { value: ',', label: ',' }]}
                       onChange={v => change({ numberFmt: { ...config.numberFmt, decimal: v } })}
                     />
                   </div>
-                  <div>
-                    <label className="block text-[9px] text-[#C5C2D0] mb-1">Thousand Separator</label>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[12px] text-[#9c99a9]">Thousand Separator</label>
                     <SelectField
                       value={config.numberFmt.thousand}
                       options={[
-                        { value: ',',  label: ',' },
-                        { value: '.',  label: '.' },
-                        { value: ' ',  label: 'Space' },
+                        { value: ',', label: ',' },
+                        { value: '.', label: '.' },
+                        { value: ' ', label: 'Space' },
                       ]}
                       onChange={v => change({ numberFmt: { ...config.numberFmt, thousand: v } })}
                     />
@@ -662,29 +753,31 @@ function AdvancedView({
               </div>
 
               {/* Currency */}
-              <div>
-                <label className="block text-[10px] text-[#9c99a9] mb-1.5 font-medium">Currency</label>
-                <div className="flex items-center gap-4 mb-2">
+              <div className="flex flex-col gap-2">
+                <label className="text-[12px] text-[#686576] tracking-[0.15px]">Currency</label>
+                <div className="flex items-center gap-5">
                   {(['auto', 'custom'] as const).map(m => (
                     <button
                       key={m}
                       onClick={() => change({ currencyMode: m })}
-                      className="flex items-center gap-1.5"
+                      className="flex items-center gap-[6px]"
                     >
-                      <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                        config.currencyMode === m ? 'border-[#5B4EFF]' : 'border-[#C5C2D0]'
-                      }`}>
+                      <div
+                        className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-colors ${
+                          config.currencyMode === m ? 'border-[#5B4EFF]' : 'border-[#cac9cf]'
+                        }`}
+                      >
                         {config.currencyMode === m && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-[#5B4EFF]" />
+                          <div className="w-[8px] h-[8px] rounded-full bg-[#5B4EFF]" />
                         )}
                       </div>
-                      <span className="text-[11px] text-[#1f1d25] capitalize">{m}</span>
+                      <span className="text-[14px] text-[#1f1d25] capitalize tracking-[0.15px]">{m}</span>
                     </button>
                   ))}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[9px] text-[#C5C2D0] mb-1">Symbol</label>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[12px] text-[#9c99a9]">Symbol</label>
                     <SelectField
                       value={config.currencySymbol}
                       options={[
@@ -697,8 +790,8 @@ function AdvancedView({
                       className={config.currencyMode === 'auto' ? 'opacity-50 pointer-events-none' : ''}
                     />
                   </div>
-                  <div>
-                    <label className="block text-[9px] text-[#C5C2D0] mb-1">Placement</label>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[12px] text-[#9c99a9]">Placement</label>
                     <SelectField
                       value={config.currencyPlacement}
                       options={[
@@ -713,19 +806,19 @@ function AdvancedView({
               </div>
 
               {/* Units */}
-              <div>
-                <label className="block text-[10px] text-[#9c99a9] mb-1.5 font-medium">Units</label>
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] text-[#686576] tracking-[0.15px]">Units</label>
                 <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[9px] text-[#C5C2D0] mb-1">Distance</label>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[12px] text-[#9c99a9]">Distance</label>
                     <SelectField
                       value={config.distanceUnit}
                       options={[{ value: 'Miles', label: 'Miles' }, { value: 'km', label: 'km' }]}
                       onChange={v => change({ distanceUnit: v })}
                     />
                   </div>
-                  <div>
-                    <label className="block text-[9px] text-[#C5C2D0] mb-1">Fuel</label>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[12px] text-[#9c99a9]">Fuel</label>
                     <SelectField
                       value={config.fuelUnit}
                       options={[{ value: 'Gallons', label: 'Gallons' }, { value: 'Litres', label: 'Litres' }]}
@@ -736,21 +829,21 @@ function AdvancedView({
               </div>
 
               {/* Date format */}
-              <div>
-                <label className="block text-[10px] text-[#9c99a9] mb-1 font-medium">Date format</label>
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] text-[#686576] tracking-[0.15px]">Date format</label>
                 <SelectField
                   value={config.dateFormat}
                   options={[
-                    { value: 'mm/dd/yyyy', label: 'mm/dd/yyyy' },
-                    { value: 'dd/mm/yyyy', label: 'dd/mm/yyyy' },
-                    { value: 'yyyy-mm-dd', label: 'yyyy-mm-dd' },
+                    { value: 'mm/dd/yyyy',  label: 'mm/dd/yyyy'  },
+                    { value: 'dd/mm/yyyy',  label: 'dd/mm/yyyy'  },
+                    { value: 'yyyy-mm-dd',  label: 'yyyy-mm-dd'  },
                     { value: 'MMM D, YYYY', label: 'MMM D, YYYY' },
                   ]}
                   onChange={v => change({ dateFormat: v })}
                 />
               </div>
 
-              {/* Preview box — inside Regional Format, per Figma */}
+              {/* Preview box */}
               <div
                 className="flex flex-col gap-2 rounded-[12px] p-3 w-full"
                 style={{
@@ -759,28 +852,27 @@ function AdvancedView({
                 }}
               >
                 <p className="text-[12px] text-[#1f1d25] tracking-[0.17px] leading-[1.43]">Preview</p>
-                <div className="flex flex-col gap-0 w-full tracking-[0.15px]">
-                  {/* Row 1 */}
+                <div className="flex flex-col gap-0 w-full">
+                  {/* Row 1: price + APR */}
                   <div className="flex items-center gap-1 w-full">
-                    <p className="flex-1 min-w-0 text-[16px] leading-[1.75] text-[#1f1d25]">
-                      {previewPrice.replace(/\.\d+$/, '')}
-                      <span className="text-[#686576]">
-                        {previewPrice.match(/\.\d+$/)?.[0] ?? '.50'}
-                      </span>
+                    <p className="flex-1 min-w-0 text-[16px] leading-[1.75] text-[#1f1d25] tracking-[0.15px]">
+                      {formattedPrice}
                     </p>
-                    <p className="flex-1 min-w-0 text-[16px] leading-[1.75] text-[#1f1d25]">
-                      {previewOfferPct} APR
+                    <p className="flex-1 min-w-0 text-[16px] leading-[1.75] text-[#1f1d25] tracking-[0.15px]">
+                      39% APR
                     </p>
                   </div>
-                  {/* Row 2 */}
+                  {/* Row 2: mileage + date */}
                   <div className="flex items-start gap-1 w-full">
                     <div className="flex-1 min-w-0">
-                      <p className="text-[16px] leading-[1.75] text-[#1f1d25]">10,000</p>
+                      <p className="text-[16px] leading-[1.75] text-[#1f1d25] tracking-[0.15px]">
+                        10{sep1}000
+                      </p>
                       <p className="text-[11px] leading-[1.66] text-[#686576] tracking-[0.4px]">
                         {config.distanceUnit.toLowerCase()}/year
                       </p>
                     </div>
-                    <p className="flex-1 min-w-0 text-[16px] leading-[1.75] text-[#1f1d25]">
+                    <p className="flex-1 min-w-0 text-[16px] leading-[1.75] text-[#1f1d25] tracking-[0.15px]">
                       {previewDate}
                     </p>
                   </div>
@@ -788,12 +880,15 @@ function AdvancedView({
               </div>
             </div>
           )}
-        </SectionCard>
+        </div>
       </div>
 
-      {/* Footer */}
-      <div className="shrink-0 flex items-center justify-end gap-2 px-3 py-3 border-t border-[#E2E2E2]">
-        <PanelButton variant="outline-gray" onClick={onCancel}>Cancel</PanelButton>
+      {/* ── Footer ─────────────────────────────────────────────────────────── */}
+      <div
+        className="shrink-0 flex items-center justify-end gap-2 px-4 py-3"
+        style={{ borderTop: '1px solid rgba(0,0,0,0.12)' }}
+      >
+        <PanelButton variant="outline-gray"  onClick={onCancel}>Cancel</PanelButton>
         <PanelButton variant="filled-accent" onClick={onApply}>Apply</PanelButton>
       </div>
     </div>
@@ -809,23 +904,17 @@ export function PreviewPanel() {
     updateElement,
   } = useDesignWorkspace();
 
-  // ── Template variable detection (recalculated on element changes) ───────────
-  // We derive vars from masterElements (original templates), NOT from substituted content.
-  // Track original template content in a stable ref so we always substitute from the
-  // original {varName} patterns, even after mock data has been applied to the canvas.
+  // ── Original content snapshot ───────────────────────────────────────────────
   const originalContentRef = useRef<Map<string, string>>(new Map());
 
-  // When preview mode activates, snapshot original content of all text elements
   useEffect(() => {
     if (isPreviewMode) {
-      // Snapshot originals if not yet cached (first activation)
       canvasElements.forEach(el => {
         if (el.content && !originalContentRef.current.has(el.id)) {
           originalContentRef.current.set(el.id, el.content);
         }
       });
     } else {
-      // Restore all originals when preview mode turns off
       originalContentRef.current.forEach((content, id) => {
         updateElement(id, { content });
       });
@@ -834,7 +923,7 @@ export function PreviewPanel() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPreviewMode]);
 
-  // Derive vars from ORIGINAL content (snapshot), falling back to canvasElements on first load
+  // ── Var detection (from original content) ───────────────────────────────────
   const vars = detectVars(
     canvasElements.map(el => ({
       ...el,
@@ -843,22 +932,51 @@ export function PreviewPanel() {
   );
   const mediaElements = detectMediaElements(canvasElements);
 
-  // ── Mock values & history ───────────────────────────────────────────────────
-  const [mockValues,    setMockValues]    = useState<Record<string, string>>({});
-  const [history,       setHistory]       = useState<Array<Record<string, string>>>([]);
-  const historyIndexRef = useRef(-1);
-  const [historyIndex,  setHistoryIndex]  = useState(-1);
-
   // ── Advanced config ─────────────────────────────────────────────────────────
-  const [view,      setView]      = useState<'main' | 'advanced'>('main');
   const [advConfig, setAdvConfig] = useState<AdvancedConfig>(DEFAULT_CONFIG);
+
+  // Ensure any newly-detected variable gets a default VarConfig entry
+  useEffect(() => {
+    setAdvConfig(prev => {
+      const missing = vars.filter(v => !prev.varConfigs[v]);
+      if (missing.length === 0) return prev;
+      const newVarConfigs = { ...prev.varConfigs };
+      for (const v of missing) {
+        newVarConfigs[v] = { textLength: 'medium', forceLineBreaks: false };
+      }
+      return { ...prev, varConfigs: newVarConfigs };
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vars.join(',')]);
+
+  // ── Mock values & history ───────────────────────────────────────────────────
+  const [mockValues,   setMockValues]   = useState<Record<string, string>>({});
+  const [history,      setHistory]      = useState<Array<Record<string, string>>>([]);
+  const historyIndexRef = useRef(-1);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+
+  // ── View state ──────────────────────────────────────────────────────────────
+  const [view, setView] = useState<'main' | 'advanced'>('main');
+
+  // ── Apply mock values to canvas ─────────────────────────────────────────────
+  const doApplyToCanvas = useCallback((vals: Record<string, string>) => {
+    for (const el of canvasElements) {
+      if (!el.content) continue;
+      const original = originalContentRef.current.get(el.id) ?? el.content;
+      const substituted = original.replace(PREVIEW_VAR_RE, (_, key: string) => vals[key] ?? `{${key}}`);
+      updateElement(el.id, { content: substituted });
+    }
+  }, [canvasElements, updateElement]);
 
   // ── Auto-init on preview mode activation ───────────────────────────────────
   const initializedRef = useRef(false);
   useEffect(() => {
     if (isPreviewMode && !initializedRef.current && vars.length > 0) {
       initializedRef.current = true;
-      const initial = generateAllMock(vars);
+      const initial = generateAllMock(vars, advConfig.varConfigs, {
+        offerPct:   advConfig.offerPct,
+        paymentAmt: advConfig.paymentAmt,
+      });
       setMockValues(initial);
       setHistory([initial]);
       historyIndexRef.current = 0;
@@ -876,27 +994,12 @@ export function PreviewPanel() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPreviewMode]);
 
-  // ── Apply mock values to canvas ─────────────────────────────────────────────
-  // Always substitutes from ORIGINAL content (via originalContentRef), not from current canvas.
-  const doApplyToCanvas = useCallback((vals: Record<string, string>) => {
-    for (const el of canvasElements) {
-      if (!el.content) continue;
-      const original = originalContentRef.current.get(el.id) ?? el.content;
-      const substituted = original.replace(PREVIEW_VAR_RE, (_, key: string) => vals[key] ?? `{${key}}`);
-      updateElement(el.id, { content: substituted });
-    }
-  }, [canvasElements, updateElement]);
-
   // ── Randomize ───────────────────────────────────────────────────────────────
   const handleRandomize = useCallback(() => {
-    const cfg: MockCfg = {
-      textLength: advConfig.textLength === 'custom' ? 'medium' : advConfig.textLength as 'short' | 'medium' | 'long',
-      offerMin:   advConfig.offerMin,
-      offerMax:   advConfig.offerMax,
-      paymentMin: advConfig.paymentMin,
-      paymentMax: advConfig.paymentMax,
-    };
-    const newVals = generateAllMock(vars, cfg);
+    const newVals = generateAllMock(vars, advConfig.varConfigs, {
+      offerPct:   advConfig.offerPct,
+      paymentAmt: advConfig.paymentAmt,
+    });
     const currentIdx = historyIndexRef.current;
     setMockValues(newVals);
     setHistory(prev => [...prev.slice(0, currentIdx + 1), newVals]);
@@ -939,14 +1042,10 @@ export function PreviewPanel() {
 
   // ── Advanced apply ──────────────────────────────────────────────────────────
   const handleAdvancedApply = useCallback(() => {
-    const cfg: MockCfg = {
-      textLength: advConfig.textLength === 'custom' ? 'medium' : advConfig.textLength as 'short' | 'medium' | 'long',
-      offerMin:   advConfig.offerMin,
-      offerMax:   advConfig.offerMax,
-      paymentMin: advConfig.paymentMin,
-      paymentMax: advConfig.paymentMax,
-    };
-    const newVals = generateAllMock(vars, cfg);
+    const newVals = generateAllMock(vars, advConfig.varConfigs, {
+      offerPct:   advConfig.offerPct,
+      paymentAmt: advConfig.paymentAmt,
+    });
     const currentIdx = historyIndexRef.current;
     setMockValues(newVals);
     setHistory(prev => [...prev.slice(0, currentIdx + 1), newVals]);
@@ -956,7 +1055,7 @@ export function PreviewPanel() {
     setView('main');
   }, [vars, advConfig, doApplyToCanvas]);
 
-  // ── Close (restore originals + turn off preview) ────────────────────────────
+  // ── Close ───────────────────────────────────────────────────────────────────
   const handleClose = useCallback(() => {
     originalContentRef.current.forEach((content, id) => {
       updateElement(id, { content });
@@ -969,12 +1068,13 @@ export function PreviewPanel() {
 
   return (
     <div
-      className="absolute right-1 top-1 bottom-1 w-[268px] bg-white rounded-2xl z-20 flex flex-col overflow-hidden"
-      style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.10)' }}
+      className="absolute right-1 top-1 bottom-1 w-[280px] bg-white rounded-2xl z-20 flex flex-col overflow-hidden"
+      style={{ boxShadow: '0px 1px 9px rgba(0,0,0,0.12), 0px 6px 5px rgba(0,0,0,0.14), 0px 3px 2.5px rgba(0,0,0,0.20)' }}
       onClick={e => e.stopPropagation()}
     >
       {view === 'advanced' ? (
         <AdvancedView
+          vars={vars}
           config={advConfig}
           onChange={patch => setAdvConfig(p => ({ ...p, ...patch }))}
           onApply={handleAdvancedApply}
