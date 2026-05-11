@@ -267,7 +267,7 @@ function SelectField({ value, options, onChange, className = '' }: {
   className?: string;
 }) {
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative min-w-0 ${className}`}>
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
@@ -305,7 +305,7 @@ function MainView({
   const [brandCompliant, setBrandCompliant] = useState(true);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-3.5 pb-2 shrink-0">
         <span className="text-[13px] font-semibold text-[#1f1d25]">Preview</span>
@@ -318,7 +318,7 @@ function MainView({
       </div>
 
       {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4 flex flex-col gap-3">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-4 flex flex-col gap-3">
 
         {/* Info banner */}
         <div className="flex items-start gap-2.5 bg-[#E3F2FD] rounded-xl px-3 py-2.5">
@@ -476,14 +476,14 @@ function VarSection({
       </span>
 
       {/* Text-length pills */}
-      <div className="flex items-center gap-[6px]">
+      <div className="flex items-center gap-[6px] flex-wrap">
         {TEXT_LENGTHS.map(({ value, label }) => {
           const sel = cfg.textLength === value;
           return (
             <button
               key={value}
               onClick={() => onChange({ textLength: value })}
-              className="flex items-center min-h-[28px] px-1 py-[3px] rounded-[8px] transition-colors shrink-0"
+              className="flex items-center min-h-[24px] px-1 py-[3px] rounded-[8px] transition-colors"
               style={{
                 backgroundColor: sel ? '#473bab' : 'transparent',
                 border: '1px solid #473bab',
@@ -576,7 +576,7 @@ function AdvancedView({
     : config.dateFormat === 'yyyy-mm-dd' ? '2026-02-27' : '02/27/2026';
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex-1 flex flex-col min-h-0">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-1 px-3 pt-3 pb-2 min-h-[48px] shrink-0">
         <button
@@ -591,7 +591,7 @@ function AdvancedView({
       </div>
 
       {/* ── Scrollable body ─────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-4 flex flex-col gap-3">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 pb-4 flex flex-col gap-3">
 
         {/* Subtitle */}
         <p className="text-[14px] text-black leading-[1.5] tracking-[0.15px]">
@@ -729,16 +729,16 @@ function AdvancedView({
               <div className="flex flex-col gap-1">
                 <label className="text-[12px] text-[#686576] tracking-[0.15px]">Number Formatting</label>
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[12px] text-[#9c99a9]">Decimal Separator</label>
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <label className="text-[12px] text-[#9c99a9] truncate">Decimal Separator</label>
                     <SelectField
                       value={config.numberFmt.decimal}
                       options={[{ value: '.', label: '.' }, { value: ',', label: ',' }]}
                       onChange={v => change({ numberFmt: { ...config.numberFmt, decimal: v } })}
                     />
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[12px] text-[#9c99a9]">Thousand Separator</label>
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <label className="text-[12px] text-[#9c99a9] truncate">Thousand Separator</label>
                     <SelectField
                       value={config.numberFmt.thousand}
                       options={[
@@ -776,7 +776,7 @@ function AdvancedView({
                   ))}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1 min-w-0">
                     <label className="text-[12px] text-[#9c99a9]">Symbol</label>
                     <SelectField
                       value={config.currencySymbol}
@@ -790,7 +790,7 @@ function AdvancedView({
                       className={config.currencyMode === 'auto' ? 'opacity-50 pointer-events-none' : ''}
                     />
                   </div>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1 min-w-0">
                     <label className="text-[12px] text-[#9c99a9]">Placement</label>
                     <SelectField
                       value={config.currencyPlacement}
@@ -809,7 +809,7 @@ function AdvancedView({
               <div className="flex flex-col gap-1">
                 <label className="text-[12px] text-[#686576] tracking-[0.15px]">Units</label>
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1 min-w-0">
                     <label className="text-[12px] text-[#9c99a9]">Distance</label>
                     <SelectField
                       value={config.distanceUnit}
@@ -817,7 +817,7 @@ function AdvancedView({
                       onChange={v => change({ distanceUnit: v })}
                     />
                   </div>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1 min-w-0">
                     <label className="text-[12px] text-[#9c99a9]">Fuel</label>
                     <SelectField
                       value={config.fuelUnit}
