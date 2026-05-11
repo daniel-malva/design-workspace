@@ -6,6 +6,60 @@ import {
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
 import type { CanvasElement } from '../store/useDesignWorkspaceStore';
 
+// ─── Locale / currency helpers ────────────────────────────────────────────────
+interface CountryLocale {
+  locale:    string;
+  currency:  string;
+  symbol:    string;
+  placement: 'before' | 'after';
+}
+
+const COUNTRY_LOCALE_MAP: Record<string, CountryLocale> = {
+  'USA ($/Miles)':   { locale: 'en-US', currency: 'USD', symbol: '$',   placement: 'before' },
+  'Canada (CAD/km)': { locale: 'en-CA', currency: 'CAD', symbol: 'CA$', placement: 'before' },
+  'UK (£/Miles)':    { locale: 'en-GB', currency: 'GBP', symbol: '£',   placement: 'before' },
+  'Germany (€/km)':  { locale: 'de-DE', currency: 'EUR', symbol: '€',   placement: 'after'  },
+  'Brazil (R$/km)':  { locale: 'pt-BR', currency: 'BRL', symbol: 'R$',  placement: 'before' },
+};
+
+function getLocaleNumberFormat(locale: string): { decimal: string; thousand: string } {
+  try {
+    const parts = new Intl.NumberFormat(locale).formatToParts(1_234_567.89);
+    return {
+      decimal:  parts.find(p => p.type === 'decimal')?.value ?? '.',
+      thousand: parts.find(p => p.type === 'group')?.value   ?? ',',
+    };
+  } catch {
+    return { decimal: '.', thousand: ',' };
+  }
+}
+
+/** Returns the auto-derived formatting for the given country + browser locale fallback. */
+function resolveAutoFormat(country: string): {
+  symbol: string; placement: 'before' | 'after'; decimal: string; thousand: string;
+} {
+  const countryInfo = COUNTRY_LOCALE_MAP[country];
+  const locale      = countryInfo?.locale ?? navigator.language ?? 'en-US';
+  const numFmt      = getLocaleNumberFormat(locale);
+
+  // Derive placement via Intl if we have a currency code, otherwise fall back to map/default
+  let placement: 'before' | 'after' = countryInfo?.placement ?? 'before';
+  let symbol = countryInfo?.symbol ?? '$';
+  if (!countryInfo) {
+    try {
+      // Best-effort: detect from browser locale
+      const parts = new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD' })
+        .formatToParts(1);
+      const symIdx = parts.findIndex(p => p.type === 'currency');
+      const intIdx = parts.findIndex(p => p.type === 'integer');
+      symbol    = parts[symIdx]?.value ?? symbol;
+      placement = symIdx < intIdx ? 'before' : 'after';
+    } catch { /* keep defaults */ }
+  }
+
+  return { symbol, placement, decimal: numFmt.decimal, thousand: numFmt.thousand };
+}
+
 // ─── Variable detection ───────────────────────────────────────────────────────
 const PREVIEW_VAR_RE = /\{([^{}]+)\}/g;
 
@@ -532,9 +586,42 @@ function AdvancedView({
   const [numberOpen,   setNumberOpen]   = useState(true);
   const [regionalOpen, setRegionalOpen] = useState(true);
 
+  // ── Auto-format: apply locale values whenever Auto mode is active ────────────
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    if (config.currencyMode !== 'auto') return;
+    const fmt = resolveAutoFormat(config.country);
+    const alreadyApplied =
+      config.currencySymbol    === fmt.symbol    &&
+      config.currencyPlacement === fmt.placement &&
+      config.numberFmt.decimal  === fmt.decimal  &&
+      config.numberFmt.thousand === fmt.thousand;
+    if (!alreadyApplied) {
+      onChangeRef.current({
+        currencySymbol:    fmt.symbol,
+        currencyPlacement: fmt.placement,
+        numberFmt:         { decimal: fmt.decimal, thousand: fmt.thousand },
+      });
+    }
+  // Re-run whenever mode or country changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.currencyMode, config.country]);
+
   // Apply a general config patch, switching to 'custom' if not already
   const change = (patch: Partial<AdvancedConfig>) => {
     onChange(config.scenario !== 'custom' ? { ...patch, scenario: 'custom' } : patch);
+  };
+
+  // Changing country should NOT switch to Custom when Auto is active — it
+  // should re-apply the new country's locale (handled by the effect above).
+  const handleCountry = (country: string) => {
+    if (config.currencyMode === 'auto') {
+      onChange({ country });          // keep currencyMode=auto; effect will update fmt
+    } else {
+      change({ country });
+    }
   };
 
   // Update a single variable's config (always switches to custom)
@@ -721,12 +808,12 @@ function AdvancedView({
                     { value: 'Germany (€/km)',  label: '🇩🇪 Germany (€/km)'  },
                     { value: 'Brazil (R$/km)',  label: '🇧🇷 Brazil (R$/km)'  },
                   ]}
-                  onChange={v => change({ country: v })}
+                  onChange={handleCountry}
                 />
               </div>
 
-              {/* Number Formatting */}
-              <div className="flex flex-col gap-1">
+              {/* Number Formatting — read-only in Auto mode */}
+              <div className={`flex flex-col gap-1 transition-opacity ${config.currencyMode === 'auto' ? 'opacity-50 pointer-events-none' : ''}`}>
                 <label className="text-[12px] text-[#686576] tracking-[0.15px]">Number Formatting</label>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="flex flex-col gap-1 min-w-0">
@@ -759,7 +846,7 @@ function AdvancedView({
                   {(['auto', 'custom'] as const).map(m => (
                     <button
                       key={m}
-                      onClick={() => change({ currencyMode: m })}
+                      onClick={() => onChange({ currencyMode: m })}
                       className="flex items-center gap-[6px]"
                     >
                       <div
