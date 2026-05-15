@@ -87,6 +87,7 @@ export function CanvasArea() {
     commentMode, canvasComments, highlightedCommentId,
     setCommentMode, addCanvasComment, setHighlightedCommentId, addCommentReply,
     isPreviewMode,
+    varInsertContextRef,
   } = useDesignWorkspace();
 
   // Live refs so stable callbacks read current canvas dimensions
@@ -515,6 +516,10 @@ export function CanvasArea() {
 
   function handleBackgroundClick() {
     if (commentModeRef.current) return; // comment mode captures canvas clicks
+    // Don't close the panel when the Variable Text panel was opened via
+    // "View All" from the autocomplete menu — the click bubbles here via
+    // React's fiber tree (portal events propagate through virtual parents).
+    if (varInsertContextRef.current) return;
     setActivePanel(null);
     selectElement(null);
     setActivityPanelOpen(!activityPanelOpen);

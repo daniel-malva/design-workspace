@@ -19,30 +19,21 @@ interface InteractionOverlayProps {
   frameRef: React.RefObject<HTMLDivElement | null>;
   onMarqueeChange: (m: MarqueeRect | null) => void;
   onGuidesChange:  (guides: AlignmentGuide[]) => void;
-  /** V53: called whenever the drag target group changes (for canvas highlight) */
+  /** Called whenever the drag target group changes (for canvas highlight) */
   onDragTargetChange?: (groupId: string | null) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // InteractionOverlay — z-50 transparent div covering the entire CanvasFrame.
 //
-// V44: Double-click via lastClick ref (time + distance + same element).
-// V44: No canvas clamp — elements may extend beyond the artboard.
-// V46: Alignment guides for single-element and group drag (snap + visual lines).
-// V47: Group child editing — updateElement on child recalculates group bounds.
-// V48: Multi-selection drag with guides via '__multi__' virtual ID.
-//       Atomic enterGroupAndSelectChild (one state update, no flicker).
-//       lastClick stores canvas coords for child hit-test on group double-click.
-// V50: Alt+drag duplicates element (original stays, copy moves).
-//       Alt+Shift+drag duplicates with axis-lock.
-//       insertElementSilent / insertGroupWithChildrenSilent used so that
-//       duplication + movement collapse into one undo step via commitHistory().
-// V53: Canvas reparenting — when a single element is dragged into another
-//       group's bounding box on mouseup, reparentElement is called.
-//       onDragTargetChange fires each frame so CanvasFrame can show the highlight.
-// V55: text elements open inline edit mode on double-click
-// V62: Space-pan — holding spacebar turns the overlay into a pan surface;
-//       cursor switches to grab/grabbing and mouse drags pan canvasOffset.
+// Responsibilities:
+//   • Single/multi-select on click; marquee select on drag-background
+//   • Element drag with alignment-guide snap
+//   • Alt+drag to duplicate; Alt+Shift+drag with axis lock
+//   • Double-click to enter inline text edit mode (cursor placement at click point)
+//   • Double-click group to enter group-edit mode and select child
+//   • Spacebar pan — holding Space turns the overlay into a pan surface
+//   • Drop-target highlighting when dragging into a group bounding box
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function InteractionOverlay({ frameRef, onMarqueeChange, onGuidesChange, onDragTargetChange }: InteractionOverlayProps) {
@@ -116,7 +107,7 @@ export function InteractionOverlay({ frameRef, onMarqueeChange, onGuidesChange, 
   const editingTextIdRef             = useRef(editingTextId);
   editingTextIdRef.current           = editingTextId;
 
-  // ── V50: Alt key tracking for copy cursor ───────────────────────────────
+  // ── Alt key tracking for copy cursor ───────────────────────────────────
   const [altActive, setAltActive] = useState(false);
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Alt') setAltActive(true);  };
@@ -181,7 +172,7 @@ export function InteractionOverlay({ frameRef, onMarqueeChange, onGuidesChange, 
 
     const startX     = e.clientX;
     const startY     = e.clientY;
-    const originCopy = canvasOffsetRef.current ?? { x: 0, y: 0 }; // V66: null guard
+    const originCopy = canvasOffsetRef.current ?? { x: 0, y: 0 };
 
     function onMouseMove(ev: MouseEvent) {
       setCanvasOffset({
@@ -231,8 +222,8 @@ export function InteractionOverlay({ frameRef, onMarqueeChange, onGuidesChange, 
     const screenY = e.clientY;
     const now     = Date.now();
 
-    // V55: If a text element is being edited inline, check whether the click
-    // is OUTSIDE the editing element's bounds. If so, commit and continue.
+    // If a text element is being edited inline, check whether the click is
+    // OUTSIDE the editing element's bounds. If so, commit and continue.
     // (The textarea's own onBlur also commits, but this is a belt-and-suspenders guard.)
     const editingId = editingTextIdRef.current;
     if (editingId) {
@@ -291,16 +282,18 @@ export function InteractionOverlay({ frameRef, onMarqueeChange, onGuidesChange, 
   }
 
   // ── Double-click: enter group / select child / start text edit ───────────
-  // V55: text elements open inline edit mode on double-click
   function handleDoubleClickElement(element: CanvasElement | null) {
     if (!element) return;
+
+    // The click coordinates for cursor placement inside the textarea
+    const clickPos = { clientX: lastClick.current.screenX, clientY: lastClick.current.screenY };
 
     // ── Child of a group ─────────────────────────────────────────────────
     if (element.groupId) {
       enterGroupAndSelectChildRef.current(element.groupId, element.id);
       // If the child is a text element, also start inline editing
       if (INLINE_EDIT_TEXT_TYPES.includes(element.type)) {
-        startTextEditRef.current(element.id);
+        startTextEditRef.current(element.id, clickPos);
       }
       return;
     }
@@ -308,7 +301,7 @@ export function InteractionOverlay({ frameRef, onMarqueeChange, onGuidesChange, 
     // ── Top-level text element ────────────────────────────────────────────
     if (INLINE_EDIT_TEXT_TYPES.includes(element.type)) {
       selectElementRef.current(element.id);
-      startTextEditRef.current(element.id);
+      startTextEditRef.current(element.id, clickPos);
       return;
     }
 
@@ -328,7 +321,7 @@ export function InteractionOverlay({ frameRef, onMarqueeChange, onGuidesChange, 
         enterGroupAndSelectChildRef.current(element.id, hitChild.id);
         // If the hit child is text, start inline editing
         if (INLINE_EDIT_TEXT_TYPES.includes(hitChild.type)) {
-          startTextEditRef.current(hitChild.id);
+          startTextEditRef.current(hitChild.id, clickPos);
         }
       } else {
         enterGroupRef.current(element.id);
@@ -532,7 +525,7 @@ export function InteractionOverlay({ frameRef, onMarqueeChange, onGuidesChange, 
     let dragging   = false;
     let duplicated = false;
 
-    // V53: Track final canvas position for reparent hit-test
+    // Track final canvas position for reparent hit-test on mouseup
     let currentDragX = startElX;
     let currentDragY = startElY;
     // Track last drag target to avoid noisy state updates
@@ -579,7 +572,7 @@ export function InteractionOverlay({ frameRef, onMarqueeChange, onGuidesChange, 
 
       updateElement(activeDragId, { x: snappedX, y: snappedY });
 
-      // V53: Compute drag target group for canvas highlight
+      // Compute drag target group for canvas highlight
       const currentGroupId = element.groupId;
       const targetGroup = elementsRef.current
         .filter(el =>
@@ -599,7 +592,7 @@ export function InteractionOverlay({ frameRef, onMarqueeChange, onGuidesChange, 
 
     function onMouseUp() {
       if (dragging) {
-        // V53: Reparenting hit-test on mouseup
+        // Reparenting hit-test on mouseup
         const currentGroupId = element.groupId ?? null;
         const targetGroup = elementsRef.current
           .filter(el =>
@@ -821,12 +814,16 @@ export function InteractionOverlay({ frameRef, onMarqueeChange, onGuidesChange, 
     window.addEventListener('mouseup',   onMouseUp);
   }
 
-  // ── Cursor priority: space-pan > alt-copy > default ─────────────────────
+  // ── Cursor priority: space-pan > alt-copy > default
+  // Text cursor is NOT shown on hover/single-click — only the textarea itself
+  // shows a text cursor once the element is in active edit mode (double-click).
   const overlayStyle: React.CSSProperties = {
     zIndex: 50,
     cursor: isSpaceHeld
       ? (isSpaceDragging ? 'grabbing' : 'grab')
-      : (altActive && selectedElementIds.length > 0 ? 'copy' : 'default'),
+      : altActive && selectedElementIds.length > 0
+        ? 'copy'
+        : 'default',
   };
 
   return (

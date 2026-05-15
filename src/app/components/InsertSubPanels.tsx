@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X, Search, Upload, ChevronRight, Plus, SlidersHorizontal,
   Star, Heart, Home, Cloud, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
@@ -6,10 +6,11 @@ import {
   User, Users, Smile, Settings, Trophy, Lightbulb, Plane, Anchor, Clock,
   ChevronsLeftRight, Triangle, Maximize2, Mountain, Image as ImageIcon,
   UserPlus, UserMinus, UserCheck, Bot, Coffee, Bug, Infinity, Accessibility,
-  Landmark, Zap, Check,
+  Landmark, Zap, Check, Trash2,
 } from 'lucide-react';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
 import type { InsertMenuItem } from '../store/useDesignWorkspaceStore';
+import { PROJECT_VARIABLES } from '../constants/variables';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { Separator } from './ui/separator';
 
@@ -242,11 +243,210 @@ function TextTemplateCard({ template, onInsert }: TextTemplateCardProps) {
 }
 
 function VariableTextContent() {
+  const {
+    insertElement, updateElement,
+    customVariables, addCustomVariable, removeCustomVariable,
+    varInsertContext, setVarInsertContext,
+  } = useDesignWorkspace();
+  const [tab,    setTab]    = useState<'custom' | 'projects'>('custom');
+  const [query,  setQuery]  = useState('');
+  const [adding, setAdding] = useState(false);
+  const [draft,  setDraft]  = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Clear the insert context when the user navigates away from this panel.
+  useEffect(() => {
+    return () => setVarInsertContext(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Focus the new-variable input when it appears
+  useEffect(() => {
+    if (adding) inputRef.current?.focus();
+  }, [adding]);
+
+  function insertVariable(name: string) {
+    if (varInsertContext) {
+      // ── Flow A: "View All" was triggered from an active text edit ──────
+      // Insert `{name}` into the existing element at the saved cursor position,
+      // replacing any partial `{...` that was being typed.
+      const { elementId, text, cursorAt } = varInsertContext;
+      const before = text.slice(0, cursorAt);
+      const after  = text.slice(cursorAt);
+      const braceStart = before.lastIndexOf('{');
+      const newBefore  = braceStart >= 0
+        ? before.slice(0, braceStart) + `{${name}}`
+        : before + `{${name}}`;
+      updateElement(elementId, { content: newBefore + after });
+      setVarInsertContext(null);
+    } else {
+      // ── Flow B: normal panel usage — create a new text element ─────────
+      insertElement({
+        type: 'text-body',
+        x: DEFAULT_X - 80,
+        y: DEFAULT_Y - 12,
+        width: 160,
+        height: 24,
+        content: `{${name}}`,
+        style: { fontSize: 14, fontWeight: '400', color: '#374151' },
+      });
+    }
+  }
+
+  function commitDraft() {
+    const clean = draft.trim().replace(/[{}]/g, '');
+    if (clean) {
+      addCustomVariable(clean);
+      insertVariable(clean);
+    }
+    setDraft('');
+    setAdding(false);
+  }
+
+  const q = query.toLowerCase();
+  const filteredCustom   = customVariables.filter(v => !q || v.toLowerCase().includes(q));
+  const filteredProjects = PROJECT_VARIABLES.filter(v => !q || v.toLowerCase().includes(q));
+
+  const radioBase = 'flex items-center gap-1.5 cursor-pointer select-none';
+  const dot = (active: boolean) => (
+    <div className={`w-[14px] h-[14px] rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+      active ? 'border-[#473bab]' : 'border-[#C5C2D0]'
+    }`}>
+      {active && <div className="w-[6px] h-[6px] rounded-full bg-[#473bab]" />}
+    </div>
+  );
+
   return (
-    <div className="flex flex-col items-center justify-center h-48 px-6 text-center">
-      <p className="text-[12px] text-[#9CA3AF]">
-        Variable text templates will appear here.
-      </p>
+    <div className="flex flex-col h-full overflow-hidden">
+
+      {/* Context banner — shown when opened via "View All" from a text edit */}
+      {varInsertContext && (
+        <div className="mx-3 mt-3 mb-1 flex items-start gap-2 bg-[#f0eff8] border border-[#d1cef5] rounded-lg px-3 py-2 shrink-0">
+          <span className="text-[11px] text-[#473bab] leading-snug flex-1">
+            Selecting a variable will insert it into your text element.
+          </span>
+          <button
+            onClick={() => setVarInsertContext(null)}
+            className="text-[#9c99a9] hover:text-[#473bab] shrink-0 mt-0.5"
+            title="Cancel"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      )}
+
+      {/* Search */}
+      <div className="px-3 pt-3 pb-2 shrink-0">
+        <div className="flex items-center gap-2 bg-white border border-[#E2E2E2] rounded-lg px-3 h-8">
+          <Search size={13} className="text-[#9CA3AF] shrink-0" />
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            className="flex-1 min-w-0 text-[12px] outline-none bg-transparent placeholder:text-[#9CA3AF] text-[#111111]"
+            placeholder="Search variables…"
+          />
+          {query && (
+            <button onClick={() => setQuery('')} className="text-[#9CA3AF] hover:text-[#111111]">
+              <X size={11} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Radio buttons */}
+      <div className="flex items-center gap-5 px-3 pb-3 shrink-0">
+        <button className={radioBase} onClick={() => setTab('custom')}>
+          {dot(tab === 'custom')}
+          <span className={`text-[13px] font-medium ${tab === 'custom' ? 'text-[#473bab]' : 'text-[#686576]'}`}>Custom</span>
+        </button>
+        <button className={radioBase} onClick={() => setTab('projects')}>
+          {dot(tab === 'projects')}
+          <span className={`text-[13px] font-medium ${tab === 'projects' ? 'text-[#473bab]' : 'text-[#686576]'}`}>Projects</span>
+        </button>
+      </div>
+
+      <div className="h-px bg-[#E2E2E2] mx-3 shrink-0" />
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        {tab === 'custom' ? (
+          <>
+            {/* Add New row */}
+            <div className="flex items-center justify-between px-3 py-2.5">
+              <span className="text-[13px] font-medium text-[#1f1d25]">Add New</span>
+              <button
+                onClick={() => { setAdding(true); setDraft(''); }}
+                className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-[#f0eff8] text-[#686576] hover:text-[#473bab] transition-colors"
+              >
+                <Plus size={15} />
+              </button>
+            </div>
+
+            {/* Inline new-variable input */}
+            {adding && (
+              <div className="px-3 pb-2">
+                <div className="flex items-center gap-2 bg-white border-2 border-[#473bab] rounded-lg px-3 h-8">
+                  <input
+                    ref={inputRef}
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') commitDraft();
+                      if (e.key === 'Escape') { setAdding(false); setDraft(''); }
+                    }}
+                    placeholder="Variable name…"
+                    className="flex-1 min-w-0 text-[12px] outline-none bg-transparent placeholder:text-[#9CA3AF] text-[#111111]"
+                  />
+                  <button onClick={commitDraft} className="text-[#473bab] hover:text-[#2e2480] transition-colors">
+                    <Check size={13} strokeWidth={2.5} />
+                  </button>
+                  <button onClick={() => { setAdding(false); setDraft(''); }} className="text-[#9CA3AF] hover:text-[#111111]">
+                    <X size={11} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Custom variable list */}
+            {filteredCustom.length === 0 && !adding && (
+              <p className="text-[12px] text-[#9CA3AF] px-3 py-2 text-center">
+                {query ? 'No variables found.' : 'No custom variables yet. Click + to add one.'}
+              </p>
+            )}
+            {filteredCustom.map(v => (
+              <button
+                key={v}
+                className="group w-full flex items-center justify-between px-3 py-2 hover:bg-[#f5f5f5] transition-colors"
+                onClick={() => insertVariable(v)}
+              >
+                <span className="text-[13px] text-[#1f1d25] font-mono truncate">{`{${v}}`}</span>
+                <button
+                  onClick={e => { e.stopPropagation(); removeCustomVariable(v); }}
+                  className="opacity-0 group-hover:opacity-100 ml-2 text-[#9c99a9] hover:text-red-500 transition-all shrink-0"
+                  title={`Remove ${v}`}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </button>
+            ))}
+          </>
+        ) : (
+          <>
+            {filteredProjects.length === 0 && (
+              <p className="text-[12px] text-[#9CA3AF] px-3 py-4 text-center">No variables found.</p>
+            )}
+            {filteredProjects.map(v => (
+              <button
+                key={v}
+                className="w-full flex items-center px-3 py-2 hover:bg-[#f5f5f5] transition-colors text-left"
+                onClick={() => insertVariable(v)}
+              >
+                <span className="text-[13px] text-[#1f1d25] font-mono truncate">{`{${v}}`}</span>
+              </button>
+            ))}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -322,9 +522,10 @@ function StaticTextContent() {
 }
 
 export function InsertTextPanel() {
+  const { textInsertTab, setTextInsertTab } = useDesignWorkspace();
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <Tabs defaultValue="static" className="w-full flex flex-col flex-1 overflow-hidden gap-0">
+      <Tabs value={textInsertTab} onValueChange={v => setTextInsertTab(v as 'static' | 'variable')} className="w-full flex flex-col flex-1 overflow-hidden gap-0">
 
         {/* Tab bar — same pattern as SettingsPanel */}
         <div className="shrink-0 relative">

@@ -29,16 +29,29 @@ export type InsertMenuItem =
 export interface ElementStyle {
   color?: string;
   backgroundColor?: string;
-  backgroundImage?: string;   // V68: CSS gradient string
-  gradientData?: {            // V68: structured gradient for future re-editing
+  backgroundImage?: string;   
+  gradientData?: {            
     angle: number;
     stops: Array<{ id: string; position: number; color: string; opacity: number }>;
   };
   fontSize?: number;
-  fontWeight?: string;
+  fontWeight?: string;        // 'Thin'|'Light'|'Regular'|'Medium'|'SemiBold'|'Bold'|'ExtraBold'|'Black'
   fontFamily?: string;
+  letterSpacing?: number;     // px
+  lineHeight?: number;        // multiplier, e.g. 1.2
+  textAlign?: 'left' | 'center' | 'right' | 'justify';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+  textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
   borderColor?: string;
   opacity?: number;
+}
+
+export interface CustomFont {
+  name: string;
+  dataUrl: string;   // base64 data URL — loaded once via FontFace API
 }
 
 export interface CanvasElement {
@@ -151,6 +164,8 @@ export interface DesignWorkspaceState {
   templateName: string;
   canvasElements: CanvasElement[];
   textProps: TextProperties;
+  customFonts: CustomFont[];
+  customVariables: string[];
   canvasOffset: { x: number; y: number } | null;
   canvasScale: number;
   /** Applied canvas dimensions — updated by Save in SettingsPanel */
@@ -160,8 +175,10 @@ export interface DesignWorkspaceState {
   /** V42: ID of the group currently being edited (children are directly selectable) */
   editingGroupId: string | null;
   /** V55: ID of the text element currently in inline edit mode */
-  editingTextId: string | null;
-  // V56: Settings state
+  editingTextId:    string | null;
+  /** Screen-space coordinates of the double-click that triggered text edit mode */
+  textEditClickPos: { clientX: number; clientY: number } | null;
+
   settings: Settings;
   /** V49: Undo history — snapshots of canvas state BEFORE each mutating action */
   history: HistorySnapshot[];
@@ -236,7 +253,7 @@ export interface DesignWorkspaceState {
 
   // ── Text edit actions (V55) ──────────────────────────────────────
   /** Enter inline text-edit mode for the given element. */
-  startTextEdit:  (id: string) => void;
+  startTextEdit:  (id: string, clickPos?: { clientX: number; clientY: number }) => void;
   /** Commit the new content and exit inline edit mode. Pushes undo snapshot. */
   commitTextEdit: (id: string, newContent: string) => void;
   /** Cancel inline edit mode without changing content. */
@@ -270,9 +287,30 @@ export interface DesignWorkspaceState {
   /** V48: Atomically enter a group AND select a specific child in one update. */
   enterGroupAndSelectChild: (groupId: string, childId: string) => void;
 
-  // ── UI actions ──────────────────────��────────────────────────────
+  // ── UI actions ────────────────────────────────────────────────────
+  /** Toggles the panel (closes if already open — for left-rail buttons). */
   setActivePanel: (panel: LeftRailItem | null) => void;
+  /** Forces the panel open without toggling — use for programmatic navigation. */
+  openPanel: (panel: LeftRailItem) => void;
   setActiveInsertItem: (item: InsertMenuItem | null) => void;
+  addCustomFont:      (font: CustomFont) => void;
+  removeCustomFont:   (name: string) => void;
+  addCustomVariable:    (name: string) => void;
+  removeCustomVariable: (name: string) => void;
+  /** Active tab in the Insert → Text sub-panel ('static' | 'variable') */
+  textInsertTab: 'static' | 'variable';
+  setTextInsertTab: (tab: 'static' | 'variable') => void;
+  /**
+   * When the user opens the Variable panel via "View All" from the autocomplete
+   * menu, this holds the element ID, the text at that moment, and the cursor
+   * offset so the panel can insert the chosen variable at the right position
+   * instead of creating a new text element.
+   * Cleared as soon as a variable is chosen or the context is abandoned.
+   */
+  varInsertContext: { elementId: string; text: string; cursorAt: number } | null;
+  /** Ref whose `.current` is always in sync with varInsertContext — safe to read inside event handlers */
+  varInsertContextRef: React.MutableRefObject<{ elementId: string; text: string; cursorAt: number } | null>;
+  setVarInsertContext: (ctx: { elementId: string; text: string; cursorAt: number } | null) => void;
   setIsPreviewMode: (v: boolean) => void;
   setIsTimelineVisible: (v: boolean) => void;
   setIsTimelineExpanded: (v: boolean) => void;
@@ -639,14 +677,17 @@ const defaultContextValue: DesignWorkspaceState = {
   templateName: 'APR Square Banner 600 x 600px',
   canvasElements: [],
   textProps: defaultTextProps,
+  customFonts: [],
+  customVariables: [],
   canvasOffset: null,
   canvasScale: 1,
   canvasWidth:  600,
   canvasHeight: 600,
   imagesVideoMenuTrigger: 0,
   editingGroupId: null,
-  editingTextId: null,
-  // V56: Settings state
+  editingTextId:    null,
+  textEditClickPos: null,
+
   settings: defaultSettings,
   history: [],
   future:  [],
@@ -665,12 +706,22 @@ const defaultContextValue: DesignWorkspaceState = {
   enterGroup: noop,
   exitGroup: noop,
   enterGroupAndSelectChild: noop,
+  addCustomFont: noop,
+  removeCustomFont: noop,
+  addCustomVariable: noop,
+  removeCustomVariable: noop,
+  textInsertTab: 'static',
+  setTextInsertTab: noop,
+  varInsertContext: null,
+  varInsertContextRef: { current: null },
+  setVarInsertContext: noop,
   selectElement: noop,
   toggleElementSelection: noop,
   clearSelection: noop,
   setSelection: noop,
   setSelectedElement: noop,
   setActivePanel: noop,
+  openPanel: noop,
   setActiveInsertItem: noop,
   setIsPreviewMode: noop,
   setIsTimelineVisible: noop,
@@ -733,7 +784,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   const [activePanel, setActivePanelState] = useState<LeftRailItem | null>('insert');
   const [activeInsertItem, setActiveInsertItemState] = useState<InsertMenuItem | null>(null);
 
-  // V34: multi-selection array
+
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
   const [selectedElementType, setSelectedElementType] = useState<string | null>(null);
 
@@ -749,13 +800,23 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   const [layers, setLayers] = useState<Layer[]>([]);
   const [canvasElements, setCanvasElements] = useState<CanvasElement[]>([]);
   const [textProps, setTextPropsState] = useState<TextProperties>(defaultTextProps);
+  const [customFonts, setCustomFonts] = useState<CustomFont[]>([]);
+  const [customVariables, setCustomVariables] = useState<string[]>([]);
+  const [textInsertTab, setTextInsertTabState] = useState<'static' | 'variable'>('static');
+  const [varInsertContext, setVarInsertContextState] = useState<{ elementId: string; text: string; cursorAt: number } | null>(null);
+  const varInsertContextRef = useRef<{ elementId: string; text: string; cursorAt: number } | null>(null);
+  const setVarInsertContext = useCallback((ctx: { elementId: string; text: string; cursorAt: number } | null) => {
+    varInsertContextRef.current = ctx; // synchronous — readable immediately in event handlers
+    setVarInsertContextState(ctx);
+  }, []);
   const [canvasOffset, setCanvasOffsetState] = useState<{ x: number; y: number } | null>(null);
   const [canvasScale, setCanvasScaleState] = useState(1);
   const [canvasWidth,  setCanvasWidthState]  = useState(600);
   const [canvasHeight, setCanvasHeightState] = useState(600);
   const [imagesVideoMenuTrigger, setImagesVideoMenuTrigger] = useState(0);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
-  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [editingTextId,    setEditingTextId]    = useState<string | null>(null);
+  const [textEditClickPos, setTextEditClickPos] = useState<{ clientX: number; clientY: number } | null>(null);
   const [sessionEvents, setSessionEvents] = useState<SessionEvent[]>([]);
 
   // Stable ref so action callbacks can log without becoming stale
@@ -771,10 +832,10 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   }, []);
   logSessionEventRef.current = logSessionEvent;
 
-  // V56: Settings state
+
   const [settings, setSettings] = useState<Settings>(defaultSettings);
 
-  // V49: History stacks
+
   const [history, setHistory] = useState<HistorySnapshot[]>([]);
   const [future,  setFuture]  = useState<HistorySnapshot[]>([]);
 
@@ -782,7 +843,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   // Saved when leaving a page; restored when entering one.
   const pageHistoryRef = useRef<Map<string | null, { h: HistorySnapshot[]; f: HistorySnapshot[] }>>(new Map());
 
-  // V59: Group drag target
+
   const [dragTargetGroupId, setDragTargetGroupIdState] = useState<string | null>(null);
 
   // Feed configuration (persists across panel open/close)
@@ -800,7 +861,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   // Ref tracks consecutive insert count for +16px offset stagger
   const insertCountRef = useRef(0);
 
-  // V49: Ref tracks current editingGroupId for stable exitGroup callback
+  // Ref tracks current editingGroupId for stable exitGroup callback (avoids stale closures)
   const editingGroupIdRef = useRef<string | null>(null);
   editingGroupIdRef.current = editingGroupId;
 
@@ -1043,7 +1104,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
         });
       }
 
-      // V47: If inserting into a group, recalculate the group's bounding box
+      // Recalculate parent group bounding box after child insert
       if (newEl.groupId) {
         const bounds = recalcGroupBounds(next, newEl.groupId);
         return next.map(el => el.id === newEl.groupId ? { ...el, ...bounds } : el);
@@ -1085,7 +1146,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
 
     setCanvasElements(prev => {
       const next = isBackground ? [newEl, ...prev] : [...prev, newEl];
-      // V47: If inserting into a group, recalculate the group's bounding box
+      // Recalculate parent group bounding box after child insert
       if (newEl.groupId) {
         const bounds = recalcGroupBounds(next, newEl.groupId);
         return next.map(el => el.id === newEl.groupId ? { ...el, ...bounds } : el);
@@ -1115,7 +1176,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
       // Apply the update to the target element
       const updated = prev.map(el => el.id === id ? { ...el, ...updates } : el);
 
-      // V47: If this element belongs to a group, recalculate the group's bounding box
+      // Recalculate parent group bounding box after child update
       const element = prev.find(el => el.id === id);
       const parentGroupId = element?.groupId;
       if (parentGroupId) {
@@ -1207,7 +1268,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
           removedGroupId = groupId;
           updated = updated.filter(el => el.id !== groupId);
         } else {
-          // V60: 1 or more children remain → group is preserved, just recalculate bounds
+          // Children remain — preserve group, recalculate bounds
           const groupBounds = recalcGroupBounds(updated, groupId);
           updated = updated.map(el =>
             el.id === groupId ? { ...el, ...groupBounds } : el
@@ -1228,7 +1289,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
       return next;
     });
 
-    // V47: If the group was removed (empty / auto-ungroup), exit group-edit mode
+    // If the group became empty (auto-ungroup), exit group-edit mode
     if (removedGroupId !== null) {
       setEditingGroupId(gid => gid === removedGroupId ? null : gid);
     }
@@ -1302,7 +1363,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
       const childIds = prev.filter(el => el.groupId === groupId).map(el => el.id);
 
       setLayers(layersPrev => layersPrev.filter(l => l.id !== groupId));
-      // V60: Select the freed children after ungrouping
+      // Select freed children after ungrouping
       setSelectedElementIds(childIds.length > 0 ? childIds : []);
       setSelectedElementType(null);
 
@@ -1492,7 +1553,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
             removedGroupId = oldGroupId;
             updated = updated.filter(el => el.id !== oldGroupId);
           } else {
-            // V60: 1 or more children remain → group is preserved, just recalculate bounds
+            // Children remain — preserve group, recalculate bounds
             const minX = Math.min(...oldChildren.map(c => c.x));
             const minY = Math.min(...oldChildren.map(c => c.y));
             const maxX = Math.max(...oldChildren.map(c => c.x + c.width));
@@ -1814,8 +1875,12 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   }, []);
 
   // ── Text edit actions (V55) ──────────────────────────────────────
-  const startTextEdit = useCallback((id: string) => {
+  const startTextEdit = useCallback((
+    id: string,
+    clickPos?: { clientX: number; clientY: number },
+  ) => {
     setEditingTextId(id);
+    setTextEditClickPos(clickPos ?? null);
   }, []);
 
   const commitTextEdit = useCallback((id: string, newContent: string) => {
@@ -1834,10 +1899,12 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
       })
     );
     setEditingTextId(null);
+    setTextEditClickPos(null);
   }, []);
 
   const cancelTextEdit = useCallback(() => {
     setEditingTextId(null);
+    setTextEditClickPos(null);
   }, []);
 
   // ── V49: Undo / Redo ───────────────────────────────────────────
@@ -1893,7 +1960,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   }, []);
 
   const exitGroup = useCallback(() => {
-    // V49: Read current editingGroupId via ref so the callback stays stable ([] deps).
+    // Read via ref so callback stays stable with empty dep array
     // Before exiting, explicitly recalculate and commit the group's bounding box one
     // final time. This guarantees that the SingleSelectionHandles that appear after
     // exiting are at the correct position even if a prior updateElement call was
@@ -1916,7 +1983,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setEditingGroupId(null);
   }, []);
 
-  // V48: Atomic action — enter group-edit mode AND select a child in one render pass.
+  // Atomic: enter group-edit mode AND select a child in one render pass (no intermediate flash)
   // Prevents the two-render flash that occurred when calling enterGroup + selectElement separately.
   const enterGroupAndSelectChild = useCallback((groupId: string, childId: string) => {
     setEditingGroupId(groupId);
@@ -1979,6 +2046,12 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
   const setActivePanel = useCallback((panel: LeftRailItem | null) => {
     setActivePanelState(prev => (prev === panel ? null : panel));
     setActiveInsertItemState(null);
+  }, []);
+
+  // Force-opens a panel without the toggle behaviour — use for programmatic
+  // navigation (e.g. "View All" switching Insert to the Variable Text tab).
+  const openPanel = useCallback((panel: LeftRailItem) => {
+    setActivePanelState(panel);
   }, []);
 
   const setActiveInsertItem = useCallback((item: InsertMenuItem | null) => {
@@ -2223,6 +2296,26 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setTextPropsState(prev => ({ ...prev, [key]: value }));
   }, []);
 
+  const addCustomFont = useCallback((font: CustomFont) => {
+    setCustomFonts(prev => prev.some(f => f.name === font.name) ? prev : [...prev, font]);
+  }, []);
+
+  const removeCustomFont = useCallback((name: string) => {
+    setCustomFonts(prev => prev.filter(f => f.name !== name));
+  }, []);
+
+  const addCustomVariable = useCallback((name: string) => {
+    setCustomVariables(prev => prev.includes(name) ? prev : [...prev, name]);
+  }, []);
+
+  const removeCustomVariable = useCallback((name: string) => {
+    setCustomVariables(prev => prev.filter(v => v !== name));
+  }, []);
+
+  const setTextInsertTab = useCallback((tab: 'static' | 'variable') => {
+    setTextInsertTabState(tab);
+  }, []);
+
   const setCanvasOffset = useCallback((
     offset: { x: number; y: number } |
     ((prev: { x: number; y: number } | null) => { x: number; y: number })
@@ -2304,7 +2397,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     setSettings(prev => ({ ...prev, ...patch }));
   }, []);
 
-  // V59: Set/clear the group highlighted as a drag drop target
+  // Set/clear the group highlighted as a drag drop target
   const setDragTargetGroupId = useCallback((id: string | null) => {
     setDragTargetGroupIdState(id);
   }, []);
@@ -2320,11 +2413,12 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     templateName: 'APR Square Banner 600 x 600px',
     canvasElements,
     textProps,
+    customFonts,
     canvasOffset, canvasScale,
     canvasWidth, canvasHeight,
     imagesVideoMenuTrigger,
     editingGroupId,
-    editingTextId,
+    editingTextId, textEditClickPos,
     history,
     future,
     dragTargetGroupId,
@@ -2339,7 +2433,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     enterGroupAndSelectChild,
     selectElement, toggleElementSelection, clearSelection, setSelection,
     setSelectedElement,
-    setActivePanel, setActiveInsertItem,
+    setActivePanel, openPanel, setActiveInsertItem,
     setIsPreviewMode, setIsTimelineVisible, setIsTimelineExpanded, setAudioPlaceholderInTimeline,
     setActivePageId,
     switchCanvasPage, addCanvasPage, duplicateCanvasPage, deleteCanvasPage, renameCanvasPage, reorderCanvasPages,
@@ -2347,7 +2441,11 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
     commentMode, canvasComments, highlightedCommentId,
     setCommentMode, addCanvasComment, toggleCanvasCommentResolved, setHighlightedCommentId, addCommentReply,
     setLayerVisibility, setLayerLocked, setLayerName,
-    setTextProp, setCanvasOffset, setCanvasScale, setCanvasDimensions, fitCanvasToScreen, setRightPanelForcedOpen,
+    setTextProp, addCustomFont, removeCustomFont,
+    customVariables, addCustomVariable, removeCustomVariable,
+    textInsertTab, setTextInsertTab,
+    varInsertContext, varInsertContextRef, setVarInsertContext,
+    setCanvasOffset, setCanvasScale, setCanvasDimensions, fitCanvasToScreen, setRightPanelForcedOpen,
     setActivityPanelOpen, setActivityPanelTab,
     triggerImagesVideoMenu,
     insertElementSilent,

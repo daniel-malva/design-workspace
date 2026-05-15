@@ -1,9 +1,8 @@
 import { useRef, type MouseEvent } from 'react';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
-import type { CanvasElementType, ChildSnapshot } from '../store/useDesignWorkspaceStore';
+import type { ChildSnapshot } from '../store/useDesignWorkspaceStore';
 import { computeResize } from '../utils/computeResize';
 import type { ResizeHandle, ResizeState } from '../utils/computeResize';
-import { computeScaledFontSize } from '../utils/computeScaledFontSize';
 import { useResizeGuides, isLeftHandle, isTopHandle } from './useResizeGuides';
 import type { ResizeGuide } from './useResizeGuides';
 
@@ -11,33 +10,20 @@ export { type ResizeHandle } from '../utils/computeResize';
 export type { ResizeGuide } from './useResizeGuides';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// useResizeHandler — V69
+// useResizeHandler
 //
-// V69 additions:
-//   • Group resize: all children scale proportionally with the bounding box.
-//   • ChildSnapshot captured at mousedown (immutable during drag).
-//   • updateGroupWithChildren called atomically on every mousemove for groups.
-//   • Text children inside groups also get proportional font-size scaling.
-//
-// V54 additions:
-//   • startFontSize captured at drag-start for text elements
-//   • font-size scales proportionally to the bounding box during resize
-//   • computeScaledFontSize selects the correct axis per handle type
-//
-// Modifier key support (read live on each mousemove — never stale):
-//   none         → free resize
-//   Shift        → maintain aspect ratio + uniform font scale
-//   Alt/Option   → resize from center
-//   Shift + Alt  → both
-//
-// V45: integrates useResizeGuides for dimension-match snap.
-// Coordinate translation: mouse-pixels → canvas-units via canvasScale.
+// Handles element resize via 8 corner/edge handles. Key behaviours:
+//   • Text elements: width/height change only — font-size is preserved,
+//     text reflows (wraps) automatically inside the new bounding box.
+//   • Group elements: all children scale proportionally. Child snapshots are
+//     captured at mousedown so scaling is always relative to the original size.
+//   • Dimension-match snap via useResizeGuides.
+//   • Modifier keys (read live per-frame, never stale):
+//       Shift       → maintain aspect ratio
+//       Alt/Option  → resize from center
+//       Shift+Alt   → both
+//   • Coordinates: screen pixels → canvas units via canvasScale.
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Element types whose font-size should scale with the bounding box. */
-const TEXT_TYPES: CanvasElementType[] = [
-  'text-header', 'text-subheader', 'text-body', 'text-template',
-];
 
 export function useResizeHandler(
   elementId: string,
@@ -64,8 +50,7 @@ export function useResizeHandler(
     const el = canvasElements.find(el => el.id === elementId);
     if (!el) return;
 
-    const isGroup       = el.type === 'group';
-    const isTextElement = TEXT_TYPES.includes(el.type);
+    const isGroup = el.type === 'group';
 
     // V69: Capture child snapshots BEFORE any transformation begins.
     // These are immutable throughout the entire drag — scale is always
@@ -85,7 +70,7 @@ export function useResizeHandler(
           }))
       : [];
 
-    // Capture immutable start snapshot — aspect ratio and font-size fixed at drag-start
+    // Capture immutable start snapshot — aspect ratio fixed at drag-start
     const state: ResizeState = {
       startMouseX:  e.clientX,
       startMouseY:  e.clientY,
@@ -95,7 +80,7 @@ export function useResizeHandler(
       startH:       el.height,
       handle,
       aspectRatio:  el.height !== 0 ? el.width / el.height : 1,
-      startFontSize: isTextElement ? (el.style?.fontSize ?? 16) : null,
+      startFontSize: null,
     };
 
     // Capture scale at drag-start so it stays consistent mid-drag
@@ -143,25 +128,8 @@ export function useResizeHandler(
         return;
       }
 
-      // ── V54: Text resize — scale font-size proportionally ────────
-      const updates: Parameters<typeof updateElement>[1] = { x, y, width, height };
-
-      if (isTextElement && state.startFontSize !== null) {
-        updates.style = {
-          ...el.style,
-          fontSize: computeScaledFontSize({
-            startW:        state.startW,
-            startH:        state.startH,
-            startFontSize: state.startFontSize,
-            newW:          width,
-            newH:          height,
-            handle,
-            keepRatio,
-          }),
-        };
-      }
-
-      updateElement(elementId, updates);
+      // V70: Text reflows (wraps) at the new width — font-size never changes.
+      updateElement(elementId, { x, y, width, height });
     }
 
     function onMouseUp() {

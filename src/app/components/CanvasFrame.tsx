@@ -1,6 +1,9 @@
 import { GroupDropTargetOverlay } from './GroupDropTargetOverlay';
 import { GroupDropTooltip } from './GroupDropTooltip';
-import { useState, useRef, useMemo, useEffect } from 'react';
+import { useState, useRef, useMemo, useEffect, useLayoutEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { PROJECT_VARIABLES } from '../constants/variables';
+import { buildTextStyle, verticalAlignToFlexAlign } from '../utils/textStyle';
 import {
   Star, Heart, Home, Cloud, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
   Play, AlertTriangle, Square, Circle, CheckCircle, PlusCircle,
@@ -10,7 +13,7 @@ import {
   Landmark, Zap, Check, ChevronRight,
 } from 'lucide-react';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
-import type { CanvasElement, ElementStyle, CanvasElementType } from '../store/useDesignWorkspaceStore';
+import type { CanvasElement, CanvasElementType } from '../store/useDesignWorkspaceStore';
 import { AlignmentGuidesOverlay } from './AlignmentGuidesOverlay';
 import type { AlignmentGuide } from '../hooks/useAlignmentGuides';
 import { useResizeHandler } from '../hooks/useResizeHandler';
@@ -275,17 +278,10 @@ function ElementContent({ element }: { element: CanvasElement }) {
     case 'text-template':
       return (
         <div
-          className="w-full h-full flex items-start"
+          className="w-full h-full flex"
           style={{
-            // V54: NO overflow:hidden — font-size scales with the bounding box
-            // so text always fits. overflow:visible lets text breathe naturally.
-            fontSize:   element.style?.fontSize   ?? 16,
-            fontWeight: element.style?.fontWeight ?? '400',
-            color:      element.style?.color      ?? '#111111',
-            fontFamily: element.style?.fontFamily ?? "'Roboto', sans-serif",
-            lineHeight: 1.2,
-            wordBreak:  'break-word',
-            whiteSpace: 'pre-wrap',
+            ...buildTextStyle(element),
+            alignItems: verticalAlignToFlexAlign(element.style?.verticalAlign),
           }}
         >
           {element.content ?? ''}
@@ -325,7 +321,7 @@ function ElementContent({ element }: { element: CanvasElement }) {
       return <LineElement variant={element.lineVariant ?? 'solid'} />;
 
     case 'group':
-      // V39: transparent container — children render on top as normal elements
+
       return <div className="w-full h-full" />;
 
     default:
@@ -334,12 +330,147 @@ function ElementContent({ element }: { element: CanvasElement }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// CANVAS ELEMENT VIEW — purely visual, pointer-events-none
-//
-// V38: NO mouse handlers here. All interaction is handled by
-// InteractionOverlay (z-50) which sits above all elements.
-// V55: Inline text editing via double-click — renders <textarea>
-//      when editingTextId === element.id.
+// VARIABLE AUTOCOMPLETE MENU
+// Appears when user types { in inline text editing mode.
+// ═══════════════════════════════════════════════════════════════════
+
+interface VarSuggestionMenuProps {
+  query:        string;
+  customVars:   string[];
+  anchorRect:   DOMRect;
+  selectedIdx:  number;
+  onSelect:     (name: string) => void;
+  onViewAll:    () => void;
+  onClose:      () => void;
+}
+
+function VariableSuggestionMenu({
+  query, customVars, anchorRect, selectedIdx, onSelect, onViewAll, onClose,
+}: VarSuggestionMenuProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // ── Smart positioning: measure rendered size then clamp to viewport ─
+  // Start invisible so the initial unclamped position never flashes.
+  const [pos,     setPos]     = useState({ top: anchorRect.bottom + 6, left: anchorRect.left });
+  const [visible, setVisible] = useState(false);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const menuH = el.offsetHeight;
+    const menuW = el.offsetWidth;
+    const vw    = window.innerWidth;
+    const vh    = window.innerHeight;
+    const GAP   = 6;
+    const MARGIN = 8; // keep away from viewport edges
+
+    // Prefer below; flip above if it would clip the bottom edge
+    let top  = anchorRect.bottom + GAP;
+    let left = anchorRect.left;
+
+    if (top + menuH > vh - MARGIN) {
+      // Would overflow bottom → show above anchor
+      const topIfAbove = anchorRect.top - menuH - GAP;
+      // Only flip if it actually fits above (or fits better)
+      top = topIfAbove >= MARGIN ? topIfAbove : Math.max(MARGIN, vh - menuH - MARGIN);
+    }
+
+    // Clamp horizontally
+    if (left + menuW > vw - MARGIN) {
+      left = vw - menuW - MARGIN;
+    }
+    left = Math.max(MARGIN, left);
+
+    setPos({ top, left });
+    setVisible(true);
+  // Re-run whenever the anchor changes (e.g. canvas scrolled/zoomed while typing)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchorRect.top, anchorRect.bottom, anchorRect.left]);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const t = setTimeout(() => document.addEventListener('mousedown', handler), 0);
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', handler); };
+  }, [onClose]);
+
+  const q = query.toLowerCase();
+  const filteredCustom   = customVars.filter(v => !q || v.toLowerCase().includes(q)).slice(0, 5);
+  const filteredProjects = PROJECT_VARIABLES.filter(v => !q || v.toLowerCase().includes(q)).slice(0, 5);
+
+  if (filteredCustom.length === 0 && filteredProjects.length === 0) return null;
+
+  let globalIdx = 0;
+
+  function VarRow({ name }: { name: string }) {
+    const i = globalIdx++;
+    const isActive = selectedIdx === i;
+    return (
+      <button
+        className={`w-full flex items-center px-3 py-[7px] text-left text-[13px] font-mono transition-colors ${
+          isActive ? 'bg-[rgba(91,78,255,0.08)] text-[#5B4EFF]' : 'text-[#1f1d25] hover:bg-[#f5f5f5]'
+        }`}
+        onMouseDown={e => { e.preventDefault(); onSelect(name); }}
+      >
+        {`{${name}}`}
+      </button>
+    );
+  }
+
+  function SectionLabel({ label }: { label: string }) {
+    return (
+      <div className="px-3 pt-2 pb-0.5">
+        <span className="text-[9px] font-semibold text-[#9c99a9] uppercase tracking-wider">{label}</span>
+      </div>
+    );
+  }
+
+  return createPortal(
+    <div
+      ref={ref}
+      className="fixed z-[9999] bg-white rounded-xl overflow-hidden py-1"
+      style={{
+        top:        pos.top,
+        left:       pos.left,
+        minWidth:   210,
+        maxWidth:   300,
+        visibility: visible ? 'visible' : 'hidden',
+        boxShadow: '0px 3px 14px 2px rgba(0,0,0,0.12), 0px 8px 10px 1px rgba(0,0,0,0.14), 0px 5px 5px -3px rgba(0,0,0,0.20)',
+      }}
+      onClick={e => e.stopPropagation()}
+    >
+      {filteredCustom.length > 0 && (
+        <>
+          <SectionLabel label="Custom" />
+          {filteredCustom.map(v => <VarRow key={v} name={v} />)}
+        </>
+      )}
+      {filteredProjects.length > 0 && (
+        <>
+          <SectionLabel label="Projects" />
+          {filteredProjects.map(v => <VarRow key={v} name={v} />)}
+        </>
+      )}
+      {/* View All footer */}
+      <div className="h-px bg-[#f0f0f0] mt-1 mb-0" />
+      <button
+        className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-[#1f1d25] hover:bg-[#f5f5f5] transition-colors"
+        onMouseDown={e => { e.preventDefault(); onViewAll(); }}
+      >
+        <ArrowRight size={14} className="text-[#686576] shrink-0" />
+        <span>View All</span>
+      </button>
+    </div>,
+    document.body,
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CANVAS ELEMENT VIEW
+// Purely visual renderer. All pointer interaction is handled by
+// InteractionOverlay (z-50). Inline text editing activates on double-click.
 // ═══════════════════════════════════════════════════════════════════
 
 /** Text element types that support inline editing */
@@ -353,7 +484,12 @@ interface ElementViewProps {
 }
 
 function CanvasElementView({ element, zIndex }: ElementViewProps) {
-  const { editingTextId, commitTextEdit, cancelTextEdit } = useDesignWorkspace();
+  const {
+    editingTextId, textEditClickPos,
+    commitTextEdit, cancelTextEdit,
+    customVariables, setActivePanel, openPanel, setActiveInsertItem, setTextInsertTab,
+    setVarInsertContext,
+  } = useDesignWorkspace();
 
   const isTextElement = INLINE_TEXT_TYPES.includes(element.type);
   const isEditingText = editingTextId === element.id;
@@ -362,45 +498,159 @@ function CanvasElementView({ element, zIndex }: ElementViewProps) {
   const [localText, setLocalText] = useState(element.content ?? '');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // ── Variable autocomplete state ─────────────────────────────────
+  const [varMenuOpen,    setVarMenuOpen]    = useState(false);
+  const [varQuery,       setVarQuery]       = useState('');
+  const [varAnchorRect,  setVarAnchorRect]  = useState<DOMRect | null>(null);
+  const [varSelectedIdx, setVarSelectedIdx] = useState(0);
+
   useEffect(() => {
     if (!isEditingText) setLocalText(element.content ?? '');
   }, [element.content, isEditingText]);
 
-  // Auto-focus + select all when edit mode starts
+  // Auto-focus when edit mode starts.
+  // Places the cursor at the double-clicked position (Figma-like) when
+  // coordinates are available; otherwise falls back to end-of-text.
   useEffect(() => {
-    if (isEditingText) {
-      // requestAnimationFrame defers until after the browser has painted the
-      // textarea, making focus reliable across different browsers/React versions.
-      const raf = requestAnimationFrame(() => {
-        if (textareaRef.current) {
-          textareaRef.current.focus();
-          textareaRef.current.select();
+    if (!isEditingText) return;
+
+    // rAF ensures the textarea is painted and in its final screen position
+    // before we query caretPositionFromPoint.
+    const raf = requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.focus();
+
+      // ── Cursor placement at the exact click point ──────────────────
+      const clickPos = textEditClickPos;   // read from store snapshot
+      if (clickPos) {
+        let placed = false;
+
+        // Standard (Firefox 20+)
+        if (!placed && 'caretPositionFromPoint' in document) {
+          const pos = (document as any).caretPositionFromPoint(
+            clickPos.clientX, clickPos.clientY,
+          );
+          if (pos && typeof pos.offset === 'number') {
+            ta.setSelectionRange(pos.offset, pos.offset);
+            placed = true;
+          }
         }
-      });
-      return () => cancelAnimationFrame(raf);
-    }
+
+        // Webkit/Blink (Chrome, Safari — caretRangeFromPoint)
+        if (!placed && 'caretRangeFromPoint' in document) {
+          const range = (document as any).caretRangeFromPoint(
+            clickPos.clientX, clickPos.clientY,
+          );
+          if (range) {
+            ta.setSelectionRange(range.startOffset, range.startOffset);
+            placed = true;
+          }
+        }
+
+        // Fallback: place cursor at end
+        if (!placed) {
+          ta.setSelectionRange(ta.value.length, ta.value.length);
+        }
+      } else {
+        // No click position (e.g. programmatic edit start) → cursor at end
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      }
+    });
+
+    return () => cancelAnimationFrame(raf);
+  // textEditClickPos is intentionally excluded — we only want this to run
+  // when isEditingText first becomes true, not on every click-pos change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditingText]);
 
-  function handleTextKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    e.stopPropagation(); // prevent canvas shortcuts from firing
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      cancelTextEdit();
-    } else if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      commitTextEdit(element.id, localText);
+  // ── Insert a variable suggestion at the current { position ──────
+  const insertVarSuggestion = useCallback((varName: string) => {
+    const ta = textareaRef.current;
+    const cursor = ta?.selectionStart ?? localText.length;
+    const before = localText.slice(0, cursor);
+    const after  = localText.slice(cursor);
+    const braceStart = before.lastIndexOf('{');
+    if (braceStart === -1) return;
+    const newBefore = before.slice(0, braceStart) + `{${varName}}`;
+    const newText   = newBefore + after;
+    setLocalText(newText);
+    setVarMenuOpen(false);
+    requestAnimationFrame(() => {
+      if (ta) {
+        ta.focus();
+        ta.setSelectionRange(newBefore.length, newBefore.length);
+      }
+    });
+  }, [localText]);
+
+  function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const newText = e.target.value;
+    setLocalText(newText);
+    // Detect `{partialName` pattern before the cursor to trigger autocomplete
+    const cursor = e.target.selectionStart ?? newText.length;
+    const before = newText.slice(0, cursor);
+    const match  = before.match(/\{([a-zA-Z0-9]*)$/);
+    if (match) {
+      setVarQuery(match[1]);
+      setVarSelectedIdx(0);
+      const rect = textareaRef.current?.getBoundingClientRect();
+      if (rect) setVarAnchorRect(rect);
+      setVarMenuOpen(true);
+    } else {
+      setVarMenuOpen(false);
     }
   }
 
-  const textStyle: React.CSSProperties = {
-    fontSize:   element.style?.fontSize   ?? 16,
-    fontWeight: element.style?.fontWeight ?? '400',
-    color:      element.style?.color      ?? '#111111',
-    fontFamily: element.style?.fontFamily ?? "'Roboto', sans-serif",
-    lineHeight: 1.2,
-    wordBreak:  'break-word',
-    whiteSpace: 'pre-wrap',
-  };
+  function handleTextKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    e.stopPropagation(); // prevent canvas shortcuts from firing
+
+    // ── When autocomplete menu is open, intercept nav keys ─────────
+    if (varMenuOpen) {
+      const q = varQuery.toLowerCase();
+      const filteredCustom   = customVariables.filter(v => !q || v.toLowerCase().includes(q)).slice(0, 5);
+      const filteredProjects = PROJECT_VARIABLES.filter(v => !q || v.toLowerCase().includes(q)).slice(0, 5);
+      const allItems = [...filteredCustom, ...filteredProjects];
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setVarSelectedIdx(i => Math.min(i + 1, allItems.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setVarSelectedIdx(i => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (allItems[varSelectedIdx]) insertVarSuggestion(allItems[varSelectedIdx]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setVarMenuOpen(false);
+        return;
+      }
+    }
+
+    // Escape exits edit mode (commit current draft)
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      commitTextEdit(element.id, localText);
+      return;
+    }
+    // Enter / Shift+Enter → native newline (textarea default behaviour)
+    // Cmd/Ctrl+Enter → explicit commit (keyboard shortcut to confirm)
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      commitTextEdit(element.id, localText);
+    }
+    // All other keys (arrows, option-word-jump, shift-select, copy/paste…)
+    // are handled natively by the textarea — no interception needed.
+  }
+
+  const textStyle = buildTextStyle(element);
 
   // Editing: elevate above InteractionOverlay (z-50) and resize handles (z-70)
   const effectiveZIndex = isEditingText ? 80 : zIndex;
@@ -415,7 +665,6 @@ function CanvasElementView({ element, zIndex }: ElementViewProps) {
         height:          element.height,
         opacity:         element.style?.opacity,
         zIndex:          effectiveZIndex,
-        // V68: render fill colour / gradient for shape elements
         backgroundColor: element.style?.backgroundColor,
         backgroundImage: element.style?.backgroundImage,
         // Allow pointer events only while editing so the textarea is clickable
@@ -429,12 +678,13 @@ function CanvasElementView({ element, zIndex }: ElementViewProps) {
           <textarea
             ref={textareaRef}
             value={localText}
-            onChange={e => setLocalText(e.target.value)}
+            onChange={handleTextChange}
             onKeyDown={handleTextKeyDown}
             onBlur={() => {
               // Guard: only commit if still in editing mode (prevents double-commit
               // when React unmounts the textarea as a result of an earlier commit)
               if (editingTextId === element.id) {
+                setVarMenuOpen(false);
                 commitTextEdit(element.id, localText);
               }
             }}
@@ -442,20 +692,52 @@ function CanvasElementView({ element, zIndex }: ElementViewProps) {
             onMouseDown={e => e.stopPropagation()}
             className="absolute inset-0 resize-none outline-none border-none bg-transparent cursor-text pointer-events-auto"
             style={{
+              // Mirror every typographic property from the display div so
+              // the text renders identically with no visual jump on enter/exit.
               ...textStyle,
-              boxShadow:    '0 0 0 2px #5B4EFF',
-              borderRadius: 2,
-              padding:      0,
-              margin:       0,
+              // Box-model: collapse all browser-default textarea chrome
+              padding:        0,
+              margin:         0,
+              boxSizing:      'border-box' as const,
+              // Show the edit ring without shifting content
+              boxShadow:      '0 0 0 2px #5B4EFF',
+              borderRadius:   2,
+              // Scroll when content overflows during editing (fixed-size box)
+              overflow:       'auto',
+              // Prevent textarea from adding its own scrollbar gutter
+              overflowX:      'hidden',
             }}
             spellCheck={false}
           />
-          {/* Editing badge shown above the element */}
+          {/* Editing hint badge — shown above the element */}
           <div className="absolute pointer-events-none whitespace-nowrap" style={{ top: -26, left: 0 }}>
             <span className="text-[9px] text-white bg-[#5B4EFF] px-1.5 py-0.5 rounded-full">
-              Editing — Esc or click outside to exit
+              Editing — Esc to exit  •  Enter for new line
             </span>
           </div>
+
+          {/* Variable autocomplete menu */}
+          {varMenuOpen && varAnchorRect && (
+            <VariableSuggestionMenu
+              query={varQuery}
+              customVars={customVariables}
+              anchorRect={varAnchorRect}
+              selectedIdx={varSelectedIdx}
+              onSelect={insertVarSuggestion}
+              onViewAll={() => {
+                // Save insertion context BEFORE committing so the Variable
+                // Text panel knows to insert into this element (not create new).
+                const cursorAt = textareaRef.current?.selectionStart ?? localText.length;
+                setVarInsertContext({ elementId: element.id, text: localText, cursorAt });
+                setVarMenuOpen(false);
+                commitTextEdit(element.id, localText);
+                setTextInsertTab('variable');
+                openPanel('insert');   // force-open without toggling (panel may already be 'insert')
+                setActiveInsertItem('text');
+              }}
+              onClose={() => setVarMenuOpen(false)}
+            />
+          )}
         </>
       ) : (
         // ── View mode ─────────────────────────────────────────────────────
@@ -534,7 +816,7 @@ function GroupEditDimOverlay({ element }: { element: CanvasElement }) {
 function GroupEditOverlay({ editingGroupId }: { editingGroupId: string }) {
   const { canvasElements } = useDesignWorkspace();
 
-  // V49: Derive the group bounding box LIVE from children's current positions.
+  // Group bounding box derived live from children — always accurate regardless of store timing.
   // This is resilient against any store-update timing issue — the border always
   // reflects the true extent of the children, regardless of whether the group
   // container element has been synced yet.
@@ -601,12 +883,12 @@ export function CanvasFrame() {
   const [activeGuides, setActiveGuides] = useState<AlignmentGuide[]>([]);
   const [resizeGuides, setResizeGuides] = useState<ResizeGuide[]>([]);
   const [marquee,      setMarquee]      = useState<MarqueeRect | null>(null);
-  // V59: dragTargetGroupId lives in the store — no local state needed
+
 
   // Stable ref to frame DOM — passed to InteractionOverlay for coordinate math
   const frameRef = useRef<HTMLDivElement>(null);
 
-  // V39: Render groups BEFORE their children so children appear on top.
+  // Render groups before their children so children appear on top.
   // Group containers are transparent — children provide the actual visuals.
   const orderedElements = useMemo(() => {
     const groups    = canvasElements.filter(el => el.type === 'group');
@@ -615,7 +897,7 @@ export function CanvasFrame() {
   }, [canvasElements]);
 
   // Resolve the single selected element (for SingleSelectionHandles).
-  // V48 guard: when in group-edit mode, only show handles if the selected element
+  // In group-edit mode, only show handles for children of the editing group
   // is actually a child of the group being edited — never on the group container itself.
   const singleSelectedEl = (() => {
     if (selectedElementIds.length !== 1) return null;
@@ -635,7 +917,7 @@ export function CanvasFrame() {
       style={{
         width:    canvasWidth,
         height:   canvasHeight,
-        overflow: 'visible', // V44: allows handles & out-of-bounds elements to show
+        overflow: 'visible', // handles and out-of-bounds elements must remain visible
         // ✅ V63: isolation:'isolate' deliberately absent — it forces the browser
         //         to rasterize this subtree before compositing, destroying vector
         //         quality at any zoom level other than 100%.
@@ -675,44 +957,38 @@ export function CanvasFrame() {
       })}
 
       {/* ── Layer 2: Multi-selection bounding box (border + handles) ── */}
-      {selectedElementIds.length > 1 && !isPreviewMode && (
+      {selectedElementIds.length > 1 && (
         <MultiSelectionBoundingBox selectedIds={selectedElementIds} />
       )}
 
       {/* ── Layer 2b: Group-edit dim overlay (z-45) ── */}
-      {editingGroupId && !isPreviewMode && (
+      {editingGroupId && (
         <GroupEditOverlay editingGroupId={editingGroupId} />
       )}
 
       {/* ── Layer 2c: Resize guides — visible during resize (z-46) ── */}
-      {!isPreviewMode && (
-        <ResizeGuidesOverlay
-          guides={resizeGuides}
-          canvasWidth={canvasWidth}
-          canvasHeight={canvasHeight}
-        />
-      )}
+      <ResizeGuidesOverlay
+        guides={resizeGuides}
+        canvasWidth={canvasWidth}
+        canvasHeight={canvasHeight}
+      />
 
       {/* ── Layer 2d: Group drop target highlight — pulses during drag (z-46, V59) ── */}
-      {!isPreviewMode && <GroupDropTargetOverlay />}
+      <GroupDropTargetOverlay />
 
       {/* ── Layer 2e: Group drop tooltip — "Drop to add to …" (z-47, V61) ── */}
-      {!isPreviewMode && <GroupDropTooltip />}
+      <GroupDropTooltip />
 
       {/* ── Layer 3: Out-of-bounds mask — dims area outside the canvas bounds (z-48) ── */}
-      {!isPreviewMode && (
-        <CanvasOutOfBoundsOverlay canvasWidth={canvasWidth} canvasHeight={canvasHeight} />
-      )}
+      <CanvasOutOfBoundsOverlay canvasWidth={canvasWidth} canvasHeight={canvasHeight} />
 
       {/* ── Layer 4: Interaction overlay — captures ALL clicks & drags ── */}
-      {!isPreviewMode && (
-        <InteractionOverlay
-          frameRef={frameRef}
-          onMarqueeChange={setMarquee}
-          onGuidesChange={setActiveGuides}
-          onDragTargetChange={setDragTargetGroupId}
-        />
-      )}
+      <InteractionOverlay
+        frameRef={frameRef}
+        onMarqueeChange={setMarquee}
+        onGuidesChange={setActiveGuides}
+        onDragTargetChange={setDragTargetGroupId}
+      />
 
       {/* ── Layer 5: Marquee selection box ── */}
       {marquee && marquee.w > 2 && marquee.h > 2 && (
@@ -731,7 +1007,7 @@ export function CanvasFrame() {
 
       {/* ── Layer 6: Single-element resize handles (above overlay) ── */}
       {/* V55: Hide handles while text element is being edited inline */}
-      {singleSelectedEl && !isPreviewMode && editingTextId !== singleSelectedEl.id && (
+      {singleSelectedEl && editingTextId !== singleSelectedEl.id && (
         <SingleSelectionHandles
           element={singleSelectedEl}
           onResizeGuidesChange={setResizeGuides}
