@@ -402,19 +402,118 @@ function generateAllMock(
 }
 
 // ─── Scenario presets ─────────────────────────────────────────────────────────
+// Each preset fully specifies every AdvancedConfig field so selecting a
+// scenario produces a completely coherent, deterministic stress environment.
 interface PresetParams {
-  textLength:      'short' | 'medium' | 'long';   // presets always pick a length
+  // Per-variable text stress
+  textLength:      'short' | 'medium' | 'long';
   forceLineBreaks: boolean;
-  offerPct:        number;
-  paymentAmt:      number;
+  // Numeric ranges
+  offerPct:        number;   // APR/offer cap (0–10)
+  paymentAmt:      number;   // monthly payment cap (349–999)
+  // Regional / locale
+  country:         string;
+  currencyMode:    'auto' | 'custom';
+  currencySymbol:  string;
+  currencyPlacement: 'before' | 'after';
+  numberFmt:       { decimal: string; thousand: string };
+  distanceUnit:    string;
+  fuelUnit:        string;
+  dateFormat:      string;
 }
 
 const PRESET_CONFIGS: Record<Exclude<Scenario, 'custom'>, PresetParams> = {
-  'long-copy':     { textLength: 'long',   forceLineBreaks: true,  offerPct: 5,  paymentAmt: 699 },
-  'financial-max': { textLength: 'medium', forceLineBreaks: false, offerPct: 10, paymentAmt: 999 },
-  'mobile-fit':    { textLength: 'short',  forceLineBreaks: true,  offerPct: 3,  paymentAmt: 599 },
-  compliance:      { textLength: 'long',   forceLineBreaks: false, offerPct: 5,  paymentAmt: 799 },
-  extreme:         { textLength: 'long',   forceLineBreaks: true,  offerPct: 10, paymentAmt: 999 },
+  // ── Long Copy ──────────────────────────────────────────────────────────────
+  // Stress-tests layout with maximum-length text values across all variables.
+  // Standard USA market — isolates the text overflow problem from locale noise.
+  'long-copy': {
+    textLength:        'long',
+    forceLineBreaks:   true,
+    offerPct:          5,
+    paymentAmt:        699,
+    country:           'USA ($/Miles)',
+    currencyMode:      'auto',
+    currencySymbol:    '$',
+    currencyPlacement: 'before',
+    numberFmt:         { decimal: '.', thousand: ',' },
+    distanceUnit:      'Miles',
+    fuelUnit:          'MPG',
+    dateFormat:        'mm/dd/yyyy',
+  },
+
+  // ── Financial Max Values ───────────────────────────────────────────────────
+  // Pushes all numeric fields to their ceiling: 9.9% APR, $999/mo payment,
+  // high MSRP/purchase prices. Text stays medium so number overflow is visible.
+  'financial-max': {
+    textLength:        'medium',
+    forceLineBreaks:   false,
+    offerPct:          10,
+    paymentAmt:        999,
+    country:           'USA ($/Miles)',
+    currencyMode:      'auto',
+    currencySymbol:    '$',
+    currencyPlacement: 'before',
+    numberFmt:         { decimal: '.', thousand: ',' },
+    distanceUnit:      'Miles',
+    fuelUnit:          'MPG',
+    dateFormat:        'mm/dd/yyyy',
+  },
+
+  // ── Mobile Fit ────────────────────────────────────────────────────────────
+  // Simulates a narrow mobile viewport: short copy, forced line breaks inside
+  // containers, low APR values typical of compact-format ads.
+  'mobile-fit': {
+    textLength:        'short',
+    forceLineBreaks:   true,
+    offerPct:          2,
+    paymentAmt:        449,
+    country:           'USA ($/Miles)',
+    currencyMode:      'auto',
+    currencySymbol:    '$',
+    currencyPlacement: 'before',
+    numberFmt:         { decimal: '.', thousand: ',' },
+    distanceUnit:      'Miles',
+    fuelUnit:          'MPG',
+    dateFormat:        'mm/dd/yyyy',
+  },
+
+  // ── Compliance Edge Cases ─────────────────────────────────────────────────
+  // Legal and compliance copy is long and dense but should NOT break mid-clause.
+  // APR and payment values represent a realistic mid-market offer.
+  compliance: {
+    textLength:        'long',
+    forceLineBreaks:   false,
+    offerPct:          5,
+    paymentAmt:        749,
+    country:           'USA ($/Miles)',
+    currencyMode:      'auto',
+    currencySymbol:    '$',
+    currencyPlacement: 'before',
+    numberFmt:         { decimal: '.', thousand: ',' },
+    distanceUnit:      'Miles',
+    fuelUnit:          'MPG',
+    dateFormat:        'mm/dd/yyyy',
+  },
+
+  // ── Extreme Everything ────────────────────────────────────────────────────
+  // Absolute worst case: longest text + forced breaks + max financial values +
+  // a fully different locale (Germany) — European decimal comma, period
+  // thousands separator, € placed after the number, km, L/100km, DD/MM/YYYY.
+  // If the design survives this, it survives everything.
+  extreme: {
+    textLength:        'long',
+    forceLineBreaks:   true,
+    offerPct:          10,
+    paymentAmt:        999,
+    country:           'Germany (€/km)',
+    currencyMode:      'auto',
+    currencySymbol:    '€',
+    currencyPlacement: 'after',
+    numberFmt:         { decimal: ',', thousand: '.' },
+    distanceUnit:      'km',
+    fuelUnit:          'L/100km',
+    dateFormat:        'dd/mm/yyyy',
+  },
 };
 
 const SCENARIO_LABELS: Record<Scenario, string> = {
@@ -996,10 +1095,18 @@ function AdvancedView({
       newVarConfigs[v] = { textLength: preset.textLength, forceLineBreaks: preset.forceLineBreaks };
     }
     onChange({
-      scenario:   s,
-      varConfigs: newVarConfigs,
-      offerPct:   preset.offerPct,
-      paymentAmt: preset.paymentAmt,
+      scenario:          s,
+      varConfigs:        newVarConfigs,
+      offerPct:          preset.offerPct,
+      paymentAmt:        preset.paymentAmt,
+      country:           preset.country,
+      currencyMode:      preset.currencyMode,
+      currencySymbol:    preset.currencySymbol,
+      currencyPlacement: preset.currencyPlacement,
+      numberFmt:         preset.numberFmt,
+      distanceUnit:      preset.distanceUnit,
+      fuelUnit:          preset.fuelUnit,
+      dateFormat:        preset.dateFormat,
     });
   };
 
