@@ -275,11 +275,18 @@ function VariableTextContent() {
       const { elementId, text, cursorAt } = varInsertContext;
       const before = text.slice(0, cursorAt);
       const after  = text.slice(cursorAt);
+
+      // Everything before the opening { of the partial variable being typed
       const braceStart = before.lastIndexOf('{');
-      const newBefore  = braceStart >= 0
-        ? before.slice(0, braceStart) + `{${name}}`
-        : before + `{${name}}`;
-      const newContent = newBefore + after;
+      const prefix = braceStart >= 0 ? before.slice(0, braceStart) : before;
+
+      // Consume any leftover variable body that follows the cursor:
+      // e.g. cursor inside "{Make}" → after = "ake}" → strip up to and including }
+      // e.g. cursor at end of "{Make" → after = ""    → nothing to strip
+      const closingIdx = after.indexOf('}');
+      const suffix = closingIdx >= 0 ? after.slice(closingIdx + 1) : after;
+
+      const newContent = prefix + `{${name}}` + suffix;
 
       const el = canvasElements.find(e => e.id === elementId);
       const hugWidth = el
