@@ -5,7 +5,6 @@ import { computeResize } from '../utils/computeResize';
 import type { ResizeHandle, ResizeState } from '../utils/computeResize';
 import { useResizeGuides, isLeftHandle, isTopHandle } from './useResizeGuides';
 import type { ResizeGuide } from './useResizeGuides';
-import { measureTextHeight } from '../utils/textStyle';
 
 export { type ResizeHandle } from '../utils/computeResize';
 export type { ResizeGuide } from './useResizeGuides';
@@ -51,20 +50,7 @@ export function useResizeHandler(
     const el = canvasElements.find(el => el.id === elementId);
     if (!el) return;
 
-    const isGroup    = el.type === 'group';
-    const isTextEl   = el.type.startsWith('text-') && !!el.content;
-
-    // Capture text measurement config at drag-start (immutable during the drag).
-    const textMeasure = isTextEl ? {
-      content:      el.content!,
-      fontSize:     el.style?.fontSize,
-      fontWeight:   el.style?.fontWeight,
-      fontFamily:   el.style?.fontFamily,
-      letterSpacing: el.style?.letterSpacing,
-      lineHeight:   el.style?.lineHeight,
-      textTransform: el.style?.textTransform,
-      fontStyle:    el.style?.italic ? 'italic' : 'normal',
-    } : null;
+    const isGroup = el.type === 'group';
 
     // V69: Capture child snapshots BEFORE any transformation begins.
     // These are immutable throughout the entire drag — scale is always
@@ -142,10 +128,7 @@ export function useResizeHandler(
         return;
       }
 
-      // Text reflows at the new width — auto-adjust height so no content is clipped.
-      if (textMeasure) {
-        height = measureTextHeight(textMeasure.content, width, textMeasure);
-      }
+      // V70: Text reflows (wraps) at the new width — font-size never changes.
       updateElement(elementId, { x, y, width, height });
     }
 

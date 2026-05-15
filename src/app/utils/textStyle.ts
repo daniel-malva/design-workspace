@@ -45,47 +45,6 @@ export function buildTextStyle(element: CanvasElement): React.CSSProperties {
 }
 
 /**
- * Measures the pixel height a string occupies when constrained to `width` px
- * and allowed to wrap. Mirrors the exact CSS the canvas applies to text
- * elements (pre-wrap, break-word). Used during resize to auto-adjust height.
- */
-export function measureTextHeight(
-  content: string,
-  width: number,
-  style: {
-    fontSize?:     number;
-    fontWeight?:   string;
-    fontFamily?:   string;
-    letterSpacing?: number;
-    lineHeight?:   number;
-    textTransform?: string;
-    fontStyle?:    string;
-  },
-): number {
-  const el = document.createElement('div');
-  el.style.cssText = [
-    'position:absolute',
-    'visibility:hidden',
-    'pointer-events:none',
-    `width:${width}px`,
-    'white-space:pre-wrap',
-    'word-break:break-word',
-    `font-size:${style.fontSize ?? 14}px`,
-    `font-weight:${fontWeightToCss(style.fontWeight)}`,
-    `font-family:${style.fontFamily ?? "'Roboto', sans-serif"}`,
-    `letter-spacing:${style.letterSpacing != null ? `${style.letterSpacing}px` : 'normal'}`,
-    `line-height:${style.lineHeight ?? 1.2}`,
-    `text-transform:${style.textTransform ?? 'none'}`,
-    `font-style:${style.fontStyle ?? 'normal'}`,
-  ].join(';');
-  el.textContent = content;
-  document.body.appendChild(el);
-  const h = el.getBoundingClientRect().height;
-  document.body.removeChild(el);
-  return Math.ceil(h);
-}
-
-/**
  * Measures the pixel width a string occupies on a single line with the given
  * typographic styles. Uses a temporarily-appended hidden DOM span so the
  * browser uses the real font metrics (including custom/loaded fonts).
