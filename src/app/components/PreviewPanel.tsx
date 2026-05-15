@@ -1017,13 +1017,14 @@ function VarSection({
 }
 
 function AdvancedView({
-  vars, config, onChange, onApply, onCancel,
+  vars, config, onChange, onApply, onCancel, applyDisabled,
 }: {
   vars: string[];
   config: AdvancedConfig;
   onChange: (patch: Partial<AdvancedConfig>) => void;
   onApply: () => void;
   onCancel: () => void;
+  applyDisabled: boolean;
 }) {
   const [numberOpen,   setNumberOpen]   = useState(true);
   const [regionalOpen, setRegionalOpen] = useState(true);
@@ -1434,7 +1435,7 @@ function AdvancedView({
         style={{ borderTop: '1px solid rgba(0,0,0,0.12)' }}
       >
         <PanelButton variant="outline-gray"  onClick={onCancel}>Cancel</PanelButton>
-        <PanelButton variant="filled-accent" onClick={onApply}>Apply</PanelButton>
+        <PanelButton variant="filled-accent" onClick={onApply} disabled={applyDisabled}>Apply</PanelButton>
       </div>
     </div>
   );
@@ -1551,6 +1552,8 @@ export function PreviewPanel() {
 
   // ── View state ──────────────────────────────────────────────────────────────
   const [view, setView] = useState<'main' | 'advanced'>('main');
+  // Tracks whether advConfig has changed since the last Apply — gates the button
+  const [hasUnappliedChanges, setHasUnappliedChanges] = useState(false);
 
   // ── Apply mock values to canvas ─────────────────────────────────────────────
   const doApplyToCanvas = useCallback((vals: Record<string, string>) => {
@@ -1728,7 +1731,7 @@ export function PreviewPanel() {
     setMockValues(newText);
     pushHistory({ text: newText, media: mockMediaUrls });
     doApplyToCanvas(newText);
-    setView('main');
+    setHasUnappliedChanges(false); // disable Apply until next change
   }, [vars, advConfig, mockMediaUrls, generateWithSheet, doApplyToCanvas, pushHistory]);
 
   // ── Close ───────────────────────────────────────────────────────────────────
@@ -1752,9 +1755,13 @@ export function PreviewPanel() {
         <AdvancedView
           vars={vars}
           config={advConfig}
-          onChange={patch => setAdvConfig(p => ({ ...p, ...patch }))}
+          onChange={patch => {
+            setAdvConfig(p => ({ ...p, ...patch }));
+            setHasUnappliedChanges(true);
+          }}
           onApply={handleAdvancedApply}
           onCancel={() => setView('main')}
+          applyDisabled={!hasUnappliedChanges}
         />
       ) : (
         <MainView
