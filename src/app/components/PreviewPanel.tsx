@@ -1017,14 +1017,12 @@ function VarSection({
 }
 
 function AdvancedView({
-  vars, config, onChange, onApply, onCancel, applyDisabled,
+  vars, config, onChange, onCancel,
 }: {
   vars: string[];
   config: AdvancedConfig;
   onChange: (patch: Partial<AdvancedConfig>) => void;
-  onApply: () => void;
   onCancel: () => void;
-  applyDisabled: boolean;
 }) {
   const [numberOpen,   setNumberOpen]   = useState(true);
   const [regionalOpen, setRegionalOpen] = useState(true);
@@ -1429,14 +1427,6 @@ function AdvancedView({
         </div>
       </div>
 
-      {/* ── Footer ─────────────────────────────────────────────────────────── */}
-      <div
-        className="flex items-center justify-end gap-2 px-4 py-3"
-        style={{ borderTop: '1px solid rgba(0,0,0,0.12)' }}
-      >
-        <PanelButton variant="outline-gray"  onClick={onCancel}>Cancel</PanelButton>
-        <PanelButton variant="filled-accent" onClick={onApply} disabled={applyDisabled}>Apply</PanelButton>
-      </div>
     </div>
   );
 }
@@ -1552,8 +1542,6 @@ export function PreviewPanel() {
 
   // ── View state ──────────────────────────────────────────────────────────────
   const [view, setView] = useState<'main' | 'advanced'>('main');
-  // Tracks whether advConfig has changed since the last Apply — gates the button
-  const [hasUnappliedChanges, setHasUnappliedChanges] = useState(false);
 
   // ── Apply mock values to canvas ─────────────────────────────────────────────
   const doApplyToCanvas = useCallback((vals: Record<string, string>) => {
@@ -1723,16 +1711,17 @@ export function PreviewPanel() {
   }, [doApplyToCanvas, doApplyMediaToCanvas]);
 
   // ── Advanced apply ──────────────────────────────────────────────────────────
-  const handleAdvancedApply = useCallback(() => {
-    const newText = generateWithSheet(vars, advConfig.varConfigs, {
-      offerPct:   advConfig.offerPct,
-      paymentAmt: advConfig.paymentAmt,
+  // Apply a fully-specified config to the canvas immediately — used for live
+  // updates from Advanced Randomization so every field change reflects at once.
+  // Does not push to the undo history (would flood it on rapid changes).
+  const applyConfig = useCallback((cfg: AdvancedConfig) => {
+    const newText = generateWithSheet(vars, cfg.varConfigs, {
+      offerPct:   cfg.offerPct,
+      paymentAmt: cfg.paymentAmt,
     });
     setMockValues(newText);
-    pushHistory({ text: newText, media: mockMediaUrls });
     doApplyToCanvas(newText);
-    setHasUnappliedChanges(false); // disable Apply until next change
-  }, [vars, advConfig, mockMediaUrls, generateWithSheet, doApplyToCanvas, pushHistory]);
+  }, [vars, generateWithSheet, doApplyToCanvas]);
 
   // ── Close ───────────────────────────────────────────────────────────────────
   const handleClose = useCallback(() => {
@@ -1756,12 +1745,11 @@ export function PreviewPanel() {
           vars={vars}
           config={advConfig}
           onChange={patch => {
-            setAdvConfig(p => ({ ...p, ...patch }));
-            setHasUnappliedChanges(true);
+            const next = { ...advConfig, ...patch };
+            setAdvConfig(next);
+            applyConfig(next);
           }}
-          onApply={handleAdvancedApply}
           onCancel={() => setView('main')}
-          applyDisabled={!hasUnappliedChanges}
         />
       ) : (
         <MainView
