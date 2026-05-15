@@ -45,6 +45,44 @@ export function buildTextStyle(element: CanvasElement): React.CSSProperties {
 }
 
 /**
+ * Measures the pixel width a string occupies on a single line with the given
+ * typographic styles. Uses a temporarily-appended hidden DOM span so the
+ * browser uses the real font metrics (including custom/loaded fonts).
+ *
+ * Returns width in CSS pixels, rounded up, plus a small 2 px breathing room.
+ */
+export function measureTextWidth(
+  text: string,
+  style: {
+    fontSize?:     number;
+    fontWeight?:   string;
+    fontFamily?:   string;
+    letterSpacing?: number;
+    textTransform?: string;
+    fontStyle?:    string;
+  },
+): number {
+  const el = document.createElement('span');
+  el.style.cssText = [
+    'position:absolute',
+    'visibility:hidden',
+    'white-space:nowrap',
+    'pointer-events:none',
+    `font-size:${style.fontSize ?? 14}px`,
+    `font-weight:${fontWeightToCss(style.fontWeight)}`,
+    `font-family:${style.fontFamily ?? "'Roboto', sans-serif"}`,
+    `letter-spacing:${style.letterSpacing != null ? `${style.letterSpacing}px` : 'normal'}`,
+    `text-transform:${style.textTransform ?? 'none'}`,
+    `font-style:${style.fontStyle ?? 'normal'}`,
+  ].join(';');
+  el.textContent = text;
+  document.body.appendChild(el);
+  const w = el.getBoundingClientRect().width;
+  document.body.removeChild(el);
+  return Math.ceil(w) + 2;
+}
+
+/**
  * Vertical alignment → flexbox alignItems value.
  * Needed in view mode where the text sits inside a flex container.
  */

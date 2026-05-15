@@ -11,6 +11,7 @@ import {
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
 import type { InsertMenuItem } from '../store/useDesignWorkspaceStore';
 import { PROJECT_VARIABLES } from '../constants/variables';
+import { measureTextWidth } from '../utils/textStyle';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { Separator } from './ui/separator';
 
@@ -244,7 +245,7 @@ function TextTemplateCard({ template, onInsert }: TextTemplateCardProps) {
 
 function VariableTextContent() {
   const {
-    insertElement, updateElement,
+    insertElement, updateElement, canvasElements,
     customVariables, addCustomVariable, removeCustomVariable,
     varInsertContext, setVarInsertContext,
   } = useDesignWorkspace();
@@ -268,8 +269,9 @@ function VariableTextContent() {
   function insertVariable(name: string) {
     if (varInsertContext) {
       // ── Flow A: "View All" was triggered from an active text edit ──────
-      // Insert `{name}` into the existing element at the saved cursor position,
-      // replacing any partial `{...` that was being typed.
+      // Insert `{name}` at the saved cursor position, replacing any partial
+      // `{...` that was being typed. Then hug the element width to the new
+      // single-line content so it never wraps.
       const { elementId, text, cursorAt } = varInsertContext;
       const before = text.slice(0, cursorAt);
       const after  = text.slice(cursorAt);
@@ -277,18 +279,38 @@ function VariableTextContent() {
       const newBefore  = braceStart >= 0
         ? before.slice(0, braceStart) + `{${name}}`
         : before + `{${name}}`;
-      updateElement(elementId, { content: newBefore + after });
+      const newContent = newBefore + after;
+
+      const el = canvasElements.find(e => e.id === elementId);
+      const hugWidth = el
+        ? measureTextWidth(newContent, {
+            fontSize:      el.style?.fontSize,
+            fontWeight:    el.style?.fontWeight,
+            fontFamily:    el.style?.fontFamily,
+            letterSpacing: el.style?.letterSpacing,
+            textTransform: el.style?.textTransform,
+            fontStyle:     el.style?.italic ? 'italic' : 'normal',
+          })
+        : undefined;
+
+      updateElement(elementId, {
+        content: newContent,
+        ...(hugWidth !== undefined && { width: hugWidth }),
+      });
       setVarInsertContext(null);
     } else {
       // ── Flow B: normal panel usage — create a new text element ─────────
+      // Width hugs the variable token on a single line.
+      const defaultStyle = { fontSize: 14, fontWeight: '400', color: '#374151' };
+      const hugWidth = measureTextWidth(`{${name}}`, defaultStyle);
       insertElement({
-        type: 'text-body',
-        x: DEFAULT_X - 80,
-        y: DEFAULT_Y - 12,
-        width: 160,
-        height: 24,
+        type:    'text-body',
+        x:       DEFAULT_X - Math.round(hugWidth / 2),
+        y:       DEFAULT_Y - 12,
+        width:   hugWidth,
+        height:  24,
         content: `{${name}}`,
-        style: { fontSize: 14, fontWeight: '400', color: '#374151' },
+        style:   defaultStyle,
       });
     }
   }
