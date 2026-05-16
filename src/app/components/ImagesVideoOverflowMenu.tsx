@@ -88,12 +88,14 @@ interface ImagesVideoOverflowMenuProps {
   isOpen: boolean;
   anchorRef: React.RefObject<HTMLElement>;
   onClose: () => void;
+  onUpload: () => void;
 }
 
 export function ImagesVideoOverflowMenu({
   isOpen,
   anchorRef,
   onClose,
+  onUpload,
 }: ImagesVideoOverflowMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -147,7 +149,7 @@ export function ImagesVideoOverflowMenu({
       <ImagesVideoMenuItem
         icon={<UploadIcon />}
         label="Upload"
-        onClick={onClose}
+        onClick={() => { onUpload(); onClose(); }}
       />
     </div>,
     document.body,

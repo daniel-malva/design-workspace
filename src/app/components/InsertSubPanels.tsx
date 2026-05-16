@@ -863,7 +863,31 @@ export function InsertDynamicPlaceholderPanel() {
 // ══════════════════════════════════════════════════════════════════
 
 export function InsertImagesVideoPanel() {
-  const { setActivePanel } = useDesignWorkspace();
+  const { setActivePanel, insertElement, canvasWidth, canvasHeight } = useDesignWorkspace();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const src = URL.createObjectURL(file);
+    if (file.type.startsWith('video/')) {
+      insertElement({ type: 'placeholder-background-video', x: 0, y: 0, width: canvasWidth, height: canvasHeight, src });
+      e.target.value = '';
+      return;
+    }
+    const img = new window.Image();
+    img.onload = () => {
+      const MAX = 400;
+      const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight, 1));
+      const w = Math.round(img.naturalWidth * scale);
+      const h = Math.round(img.naturalHeight * scale);
+      insertElement({ type: 'placeholder-image', x: Math.max(0, 300 - Math.round(w / 2)), y: Math.max(0, 300 - Math.round(h / 2)), width: w, height: h, src });
+    };
+    img.onerror = () => insertElement({ type: 'placeholder-image', x: 200, y: 225, width: 200, height: 150, src });
+    img.src = src;
+    e.target.value = '';
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="px-3 pt-3 pb-2 shrink-0">
@@ -875,11 +899,12 @@ export function InsertImagesVideoPanel() {
         </div>
         <p className="text-[12px] text-[#6B6B6B]">Upload images or video to add to your template</p>
         <button
-          onClick={() => setActivePanel(null)}
+          onClick={() => { fileRef.current?.click(); setActivePanel(null); }}
           className="flex items-center gap-2 bg-[#5B4EFF] hover:bg-[#4a3fd4] text-white text-[12px] font-medium rounded-full px-4 py-2 transition-colors"
         >
           <Upload size={13} /> Upload Media
         </button>
+        <input type="file" accept="image/*,video/*" ref={fileRef} className="hidden" onChange={handleFileChange} />
       </div>
     </div>
   );
@@ -943,12 +968,36 @@ export function InsertComponentPanel() {
 // ══════════════════════════════════════════════════════════════════
 
 export function InsertAnnotationPanel() {
+  const { insertElement, canvasWidth, canvasHeight } = useDesignWorkspace();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const src = URL.createObjectURL(file);
+    const img = new window.Image();
+    img.onload = () => {
+      const MAX = 400;
+      const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight, 1));
+      const w = Math.round(img.naturalWidth * scale);
+      const h = Math.round(img.naturalHeight * scale);
+      insertElement({ type: 'placeholder-image', x: Math.max(0, 300 - Math.round(w / 2)), y: Math.max(0, 300 - Math.round(h / 2)), width: w, height: h, src });
+    };
+    img.onerror = () => insertElement({ type: 'placeholder-image', x: 200, y: 225, width: 200, height: 150, src });
+    img.src = src;
+    e.target.value = '';
+  }
+
   return (
     <div className="flex flex-col gap-4 px-4 py-4 overflow-y-auto overflow-x-hidden flex-1">
-      <button className="flex items-center gap-2 text-[13px] text-[#111111] hover:text-[#5B4EFF] font-medium transition-colors">
+      <button
+        onClick={() => fileRef.current?.click()}
+        className="flex items-center gap-2 text-[13px] text-[#111111] hover:text-[#5B4EFF] font-medium transition-colors"
+      >
         <Upload size={15} />
         Upload
       </button>
+      <input type="file" accept="image/*" ref={fileRef} className="hidden" onChange={handleFileChange} />
 
       <button className="w-full border border-[#f87171] text-[#ef4444] text-[12px] rounded-lg py-2 hover:bg-red-50 transition-colors">
         + Add new annotation
@@ -1160,14 +1209,28 @@ const audioFiles: AudioFile[] = [
 ];
 
 export function InsertAudioPanel() {
-  const { setActivePanel } = useDesignWorkspace();
+  const { setActivePanel, insertElement } = useDesignWorkspace();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function handleAudioChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const src = URL.createObjectURL(file);
+    insertElement({ type: 'placeholder-audio', x: 220, y: 280, width: 160, height: 40, src });
+    e.target.value = '';
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Upload */}
       <div className="px-3 pt-3 pb-1 shrink-0">
-        <button className="w-full flex items-center justify-center gap-2 bg-[#5B4EFF] text-white text-[12px] font-medium rounded-full py-2 hover:bg-[#4a3fd4] transition-colors">
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="w-full flex items-center justify-center gap-2 bg-[#5B4EFF] text-white text-[12px] font-medium rounded-full py-2 hover:bg-[#4a3fd4] transition-colors"
+        >
           <Upload size={13} /> Upload Media
         </button>
+        <input type="file" accept="audio/*" ref={fileRef} className="hidden" onChange={handleAudioChange} />
         <p className="text-[10px] text-[#9CA3AF] text-center mt-1">ACC, AIFF, MP3 or WAV (Max. 3MB)</p>
       </div>
 

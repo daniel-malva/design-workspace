@@ -1,5 +1,5 @@
 import { BrandKitSelector } from './BrandKitSelector';
-import { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Type, Braces, ImageIcon, Component, MessageSquare,
   Shapes, Smile, Music, Mic, Eye, EyeOff, Lock, Unlock,
@@ -89,9 +89,32 @@ function InsertMenuItemButton({
 
 // Level 1 — list of insertable element types
 function InsertMenuPanel() {
-  const { setActiveInsertItem, activeInsertItem, imagesVideoMenuTrigger } = useDesignWorkspace();
+  const { setActiveInsertItem, activeInsertItem, imagesVideoMenuTrigger, insertElement, canvasWidth, canvasHeight } = useDesignWorkspace();
   const [imagesMenuOpen, setImagesMenuOpen] = useState(false);
   const imagesItemRef = useRef<HTMLButtonElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const src = URL.createObjectURL(file);
+    if (file.type.startsWith('video/')) {
+      insertElement({ type: 'placeholder-background-video', x: 0, y: 0, width: canvasWidth, height: canvasHeight, src });
+      e.target.value = '';
+      return;
+    }
+    const img = new window.Image();
+    img.onload = () => {
+      const MAX = 400;
+      const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight, 1));
+      const w = Math.round(img.naturalWidth * scale);
+      const h = Math.round(img.naturalHeight * scale);
+      insertElement({ type: 'placeholder-image', x: Math.max(0, 300 - Math.round(w / 2)), y: Math.max(0, 300 - Math.round(h / 2)), width: w, height: h, src });
+    };
+    img.onerror = () => insertElement({ type: 'placeholder-image', x: 200, y: 225, width: 200, height: 150, src });
+    img.src = src;
+    e.target.value = '';
+  }
 
   // Open the Images/Video overflow menu when the 'U' shortcut fires
   useEffect(() => {
@@ -128,7 +151,9 @@ function InsertMenuPanel() {
         isOpen={imagesMenuOpen}
         anchorRef={imagesItemRef}
         onClose={() => setImagesMenuOpen(false)}
+        onUpload={() => fileRef.current?.click()}
       />
+      <input type="file" accept="image/*,video/*" ref={fileRef} className="hidden" onChange={handleFileChange} />
     </>
   );
 }
