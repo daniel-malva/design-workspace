@@ -1011,7 +1011,16 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
 
     const W = canvasWidthRef.current;
     const H = canvasHeightRef.current;
-    const variant  = element.placeholderVariant;
+
+    // Derive placeholderVariant from the element type when the caller omits it,
+    // e.g. insertElement({ type: 'placeholder-background-video', src }) should
+    // not need to repeat the variant — strip the 'placeholder-' prefix.
+    const variant: CanvasElement['placeholderVariant'] =
+      element.placeholderVariant ??
+      (element.type.startsWith('placeholder-')
+        ? (element.type.slice('placeholder-'.length) as CanvasElement['placeholderVariant'])
+        : undefined);
+
     const existing = canvasElementsRef.current;
 
     // Helpers — treat legacy and current variant names uniformly
@@ -1026,16 +1035,21 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
 
     let newEl: CanvasElement;
 
+    // All branches spread `element` then override. Explicitly include the
+    // resolved `variant` so callers that omit placeholderVariant still get
+    // the correct value stored on the element (PlaceholderElement reads it).
+    const resolvedVariant = { placeholderVariant: variant };
+
     if (isBackground) {
       // Background always fills the full canvas
-      newEl = { ...element, id, name, x: 0, y: 0, width: W, height: H };
+      newEl = { ...element, ...resolvedVariant, id, name, x: 0, y: 0, width: W, height: H };
 
     } else if (isProductVariant(variant)) {
       // Primary hero — 65 × 65% centered
       const w = Math.round(W * 0.65);
       const h = Math.round(H * 0.65);
       newEl = {
-        ...element, id, name,
+        ...element, ...resolvedVariant, id, name,
         x: Math.round((W - w) / 2),
         y: Math.round((H - h) / 2),
         width: w, height: h,
@@ -1048,7 +1062,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
         const w = Math.round(W * 0.40);
         const h = Math.round(H * 0.40);
         newEl = {
-          ...element, id, name,
+          ...element, ...resolvedVariant, id, name,
           x: Math.round(W * 0.70 - w / 2),
           y: Math.round(H * 0.50 - h / 2),
           width: w, height: h,
@@ -1058,7 +1072,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
         const w = Math.round(W * 0.55);
         const h = Math.round(H * 0.55);
         newEl = {
-          ...element, id, name,
+          ...element, ...resolvedVariant, id, name,
           x: Math.round((W - w) / 2),
           y: Math.round((H - h) / 2),
           width: w, height: h,
@@ -1073,7 +1087,7 @@ export function DesignWorkspaceProvider(props: { children: React.ReactNode }) {
       const logoCount = existing.filter(el => isLogoVariant(el.placeholderVariant)).length;
       const logoH     = element.height > 0 ? element.height : Math.round(H * 0.10);
       newEl = {
-        ...element, id, name,
+        ...element, ...resolvedVariant, id, name,
         x: margin,
         y: margin + logoCount * (logoH + spacing),
       };
