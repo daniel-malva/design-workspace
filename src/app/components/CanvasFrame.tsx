@@ -74,9 +74,10 @@ function PlaceholderDashedBorder({ color, radius }: { color: string; radius: num
 }
 
 function PlaceholderElement({ variant, width, height, src }: { variant: string; width: number; height: number; src?: string }) {
-  // When a feed image URL has been resolved, render it directly
+  // When a feed image/video URL has been resolved, render it directly
   if (src) {
     const isBg      = variant === 'background' || variant === 'background-image' || variant === 'background-video';
+    const isVideo   = variant === 'background-video';
     const isLogo    = variant === 'logo' || variant === 'primary-logo' || variant === 'secondary-logo' || variant === 'event-logo';
     const isProduct = variant === 'product' || variant === 'jellybean' || variant === 'image' || variant === 'media';
 
@@ -84,13 +85,26 @@ function PlaceholderElement({ variant, width, height, src }: { variant: string; 
     if (!isProduct) {
       return (
         <div className="w-full h-full relative overflow-hidden" style={{ borderRadius: isBg ? 0 : 4 }}>
-          <img
-            src={src}
-            alt=""
-            draggable={false}
-            className="w-full h-full"
-            style={{ objectFit: isLogo ? 'contain' : 'cover', display: 'block' }}
-          />
+          {isVideo ? (
+            <video
+              src={src}
+              autoPlay
+              loop
+              muted
+              playsInline
+              draggable={false}
+              className="w-full h-full"
+              style={{ objectFit: 'cover', display: 'block' }}
+            />
+          ) : (
+            <img
+              src={src}
+              alt=""
+              draggable={false}
+              className="w-full h-full"
+              style={{ objectFit: isLogo ? 'contain' : 'cover', display: 'block' }}
+            />
+          )}
         </div>
       );
     }
