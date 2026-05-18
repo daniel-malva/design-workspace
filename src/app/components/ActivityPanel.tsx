@@ -1111,13 +1111,17 @@ function CommentsTab() {
 // ══════════════════════════════════════════════════════════════════
 
 export function ActivityPanel() {
-  const { activityPanelTab, setActivityPanelTab } = useDesignWorkspace();
+  const { activityPanelTab, setActivityPanelTab, setCommentMode } = useDesignWorkspace();
 
   return (
     <div className="flex flex-col w-full h-full overflow-hidden">
       <Tabs
         value={activityPanelTab}
-        onValueChange={v => setActivityPanelTab(v as 'pages' | 'eventLog' | 'comments')}
+        onValueChange={v => {
+          const tab = v as 'pages' | 'eventLog' | 'comments';
+          setActivityPanelTab(tab);
+          setCommentMode(tab === 'comments');
+        }}
         className="flex flex-col flex-1 overflow-hidden"
       >
         {/* ── Tab bar ──────────────────────────────────────────── */}
