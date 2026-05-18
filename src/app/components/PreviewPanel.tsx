@@ -86,7 +86,7 @@ function detectMediaElements(elements: CanvasElement[]): CanvasElement[] {
 // ─── Mock data pools ──────────────────────────────────────────────────────────
 const MOCK_POOLS: Record<string, string[]> = {
   year:       ['2023', '2024', '2025', '2026'],
-  make:       ['BMW'],
+  make:       ['BMW', 'Mercedes-Benz', 'Audi', 'Toyota', 'Honda', 'Lexus', 'Porsche', 'Volkswagen', 'Ford', 'Chevrolet'],
   model:      ['X5', 'X3', '3 Series', 'M4', 'M3', '5 Series', '7 Series', 'iX', 'X7', 'i4'],
   trim:       ['xDrive40i', 'M Sport', 'Competition', 'sDrive30i', 'xDrive50e', 'M xDrive', 'Pure Excellence'],
   header:     [
@@ -770,17 +770,27 @@ function MediaThumb({
     <div className="flex flex-col items-center gap-1">
       <div
         ref={thumbRef}
-        onClick={openMenu}
-        className="relative bg-[#f0f2f4] border border-[rgba(0,0,0,0.12)] rounded-[8px] overflow-hidden cursor-pointer hover:border-[#5B4EFF] transition-colors shrink-0"
+        className="relative bg-[#f0f2f4] border border-[rgba(0,0,0,0.12)] rounded-[8px] overflow-hidden shrink-0 group"
         style={{ width: 70, height: 70 }}
       >
-        <div className="absolute inset-[4px] rounded-[4px] overflow-hidden bg-white flex items-center justify-center">
+        <div
+          className="absolute inset-[4px] rounded-[4px] overflow-hidden bg-white flex items-center justify-center cursor-pointer"
+          onClick={openMenu}
+        >
           {imgUrl ? (
             <img src={imgUrl} alt={label} className="w-full h-full object-cover" />
           ) : (
             <span className="text-[20px] opacity-30">🖼</span>
           )}
         </div>
+        {/* Direct shuffle icon — visible on hover so user can shuffle without opening menu */}
+        <button
+          className="absolute bottom-1 right-1 w-5 h-5 flex items-center justify-center rounded bg-white/90 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#5B4EFF] hover:text-white text-[#686576]"
+          onClick={() => onPick(el.id, pickRandomImg(el.type))}
+          title={`Shuffle ${label}`}
+        >
+          <Shuffle size={11} />
+        </button>
       </div>
       <span className="text-[9px] text-[#686576] font-medium text-center leading-tight max-w-[70px] truncate">
         {label}
@@ -1662,15 +1672,19 @@ export function PreviewPanel() {
 
   // ── Randomize single text variable ──────────────────────────────────────────
   const handleRandomizeOne = useCallback((varName: string) => {
-    const newVal  = generateOneWithSheet(varName, advConfig.varConfigs, {
-      offerPct:   advConfig.offerPct,
-      paymentAmt: advConfig.paymentAmt,
-    });
+    const cfg = { offerPct: advConfig.offerPct, paymentAmt: advConfig.paymentAmt };
+    // Retry up to 4 times to guarantee a visually different value.
+    // Prevents the shuffle icon appearing "stuck" when the pool is small.
+    let newVal = generateOneWithSheet(varName, advConfig.varConfigs, cfg);
+    const current = mockValues[varName];
+    for (let i = 0; i < 4 && newVal === current; i++) {
+      newVal = generateOneWithSheet(varName, advConfig.varConfigs, cfg);
+    }
     const newText = { ...mockValues, [varName]: newVal };
     setMockValues(newText);
     pushHistory({ text: newText, media: mockMediaUrls });
     doApplyToCanvas(newText);
-  }, [mockValues, mockMediaUrls, advConfig, doApplyToCanvas, pushHistory]);
+  }, [mockValues, mockMediaUrls, advConfig, generateOneWithSheet, doApplyToCanvas, pushHistory]);
 
   // ── Pick / replace a single media placeholder (from file or shuffle) ─────────
   const handlePickMedia = useCallback((elementId: string, src: string) => {
