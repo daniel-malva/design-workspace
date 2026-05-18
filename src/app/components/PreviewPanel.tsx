@@ -1582,12 +1582,17 @@ export function PreviewPanel() {
   const historyIndexRef = useRef(-1);
   const [historyIndex,  setHistoryIndex]  = useState(-1);
 
+  // Persists the last preview snapshot across sessions so re-entering preview
+  // mode restores the previous population instead of re-randomising.
+  const persistedMockRef = useRef<PreviewSnapshot | null>(null);
+
   /** Push a new snapshot onto the undo stack, trimming any redo tail. */
   const pushHistory = useCallback((snap: PreviewSnapshot) => {
     const idx = historyIndexRef.current;
     historyRef.current = [...historyRef.current.slice(0, idx + 1), snap];
     historyIndexRef.current = idx + 1;
     setHistoryIndex(idx + 1);   // trigger re-render so canUndo/canRedo update
+    persistedMockRef.current = snap; // keep persisted state in sync
   }, []);
 
   // ── View state ──────────────────────────────────────────────────────────────
@@ -1659,16 +1664,38 @@ export function PreviewPanel() {
       const status   = initializedRef.current;
 
       if (status === 'none') {
-        // First init — use whatever data is available right now
         initializedRef.current = hasSheet ? 'sheet' : 'mock';
-        const initialText: Record<string, string> = vars.length > 0
-          ? generateWithSheet(vars, advConfig.varConfigs, { offerPct: advConfig.offerPct, paymentAmt: advConfig.paymentAmt })
-          : {};
-        const initialMedia: Record<string, string> = {};
-        for (const el of mediaElements) initialMedia[el.id] = pickRandomImg(el.type);
+
+        // If we have a persisted snapshot from a previous session, restore it.
+        // Fill in any vars/placeholders that didn't exist last time with fresh values.
+        const persisted = persistedMockRef.current;
+        const cfg = { offerPct: advConfig.offerPct, paymentAmt: advConfig.paymentAmt };
+
+        let initialText: Record<string, string>;
+        let initialMedia: Record<string, string>;
+
+        if (persisted) {
+          initialText = {};
+          for (const v of vars) {
+            initialText[v] = persisted.text[v]
+              ?? generateSingleMock(v, advConfig.varConfigs, cfg);
+          }
+          initialMedia = {};
+          for (const el of mediaElements) {
+            initialMedia[el.id] = persisted.media[el.id] ?? pickRandomImg(el.type);
+          }
+        } else {
+          initialText = vars.length > 0
+            ? generateWithSheet(vars, advConfig.varConfigs, cfg)
+            : {};
+          initialMedia = {};
+          for (const el of mediaElements) initialMedia[el.id] = pickRandomImg(el.type);
+        }
+
         setMockValues(initialText);
         setMockMediaUrls(initialMedia);
         const snap = { text: initialText, media: initialMedia };
+        persistedMockRef.current = snap;
         historyRef.current = [snap];
         historyIndexRef.current = 0;
         setHistoryIndex(0);
