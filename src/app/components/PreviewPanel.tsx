@@ -1148,7 +1148,7 @@ function AdvancedView({
       </div>
 
       {/* ── Scrollable body ─────────────────────────────────────────────────── */}
-      <div className="overflow-y-auto px-4 pb-3 space-y-3">
+      <div className="overflow-y-auto min-h-0 px-4 pb-3 space-y-3">
 
         {/* Subtitle */}
         <p className="text-[14px] text-black leading-[1.5] tracking-[0.15px]">
