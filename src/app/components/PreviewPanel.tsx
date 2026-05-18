@@ -1123,11 +1123,14 @@ function AdvancedView({
   const sep1 = config.numberFmt.thousand;
   const sep2 = config.numberFmt.decimal;
   const sym  = config.currencySymbol;
-  const symBefore = config.currencyMode === 'auto' || config.currencyPlacement === 'before';
-  const formattedPrice = `${symBefore ? sym : ''}12${sep1}499${sep2}50${symBefore ? '' : sym}`;
+  const symBefore = config.currencyPlacement === 'before';
+  const formattedPrice = `${symBefore ? sym : ''}12${sep1}499${sep2}50${symBefore ? '' : ` ${sym}`}`;
   const previewDate = config.dateFormat === 'dd/mm/yyyy'
     ? '27/02/2026'
     : config.dateFormat === 'yyyy-mm-dd' ? '2026-02-27' : '02/27/2026';
+  const previewFuel = config.fuelUnit === 'Gallons' || config.fuelUnit === 'MPG'
+    ? '28 MPG'
+    : `7${sep2}5 L/100km`;
 
   return (
     <div className="flex-1 min-h-0" style={{ display: 'grid', gridTemplateRows: 'auto 1fr auto', overflow: 'hidden' }}>
@@ -1145,7 +1148,7 @@ function AdvancedView({
       </div>
 
       {/* ── Scrollable body ─────────────────────────────────────────────────── */}
-      <div className="overflow-y-auto px-4 pb-4 space-y-3">
+      <div className="overflow-y-auto px-4 pb-3 space-y-3">
 
         {/* Subtitle */}
         <p className="text-[14px] text-black leading-[1.5] tracking-[0.15px]">
@@ -1397,43 +1400,45 @@ function AdvancedView({
                 />
               </div>
 
-              {/* Preview box */}
-              <div
-                className="flex flex-col gap-2 rounded-[12px] p-3 w-full"
-                style={{
-                  backgroundColor: 'rgba(99,86,225,0.04)',
-                  border: '1px solid rgba(99,86,225,0.5)',
-                }}
-              >
-                <p className="text-[12px] text-[#1f1d25] tracking-[0.17px] leading-[1.43]">Preview</p>
-                <div className="flex flex-col gap-0 w-full">
-                  {/* Row 1: price + APR */}
-                  <div className="flex items-center gap-1 w-full">
-                    <p className="flex-1 min-w-0 text-[16px] leading-[1.75] text-[#1f1d25] tracking-[0.15px]">
-                      {formattedPrice}
-                    </p>
-                    <p className="flex-1 min-w-0 text-[16px] leading-[1.75] text-[#1f1d25] tracking-[0.15px]">
-                      39% APR
-                    </p>
-                  </div>
-                  {/* Row 2: mileage + date */}
-                  <div className="flex items-start gap-1 w-full">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[16px] leading-[1.75] text-[#1f1d25] tracking-[0.15px]">
-                        10{sep1}000
-                      </p>
-                      <p className="text-[11px] leading-[1.66] text-[#686576] tracking-[0.4px]">
-                        {config.distanceUnit.toLowerCase()}/year
-                      </p>
-                    </div>
-                    <p className="flex-1 min-w-0 text-[16px] leading-[1.75] text-[#1f1d25] tracking-[0.15px]">
-                      {previewDate}
-                    </p>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* ── Fixed preview footer — always visible, updates in real time ────── */}
+      <div className="border-t border-[#E2E2E2] px-4 py-3 shrink-0">
+        <div
+          className="rounded-[12px] p-3"
+          style={{
+            backgroundColor: 'rgba(99,86,225,0.04)',
+            border: '1px solid rgba(99,86,225,0.5)',
+          }}
+        >
+          <p className="text-[11px] font-semibold text-[#686576] uppercase tracking-[0.5px] mb-2">
+            Preview
+          </p>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+            <div>
+              <p className="text-[15px] font-medium text-[#1f1d25] leading-tight">{formattedPrice}</p>
+              <p className="text-[10px] text-[#9c99a9] mt-0.5">Price</p>
+            </div>
+            <div>
+              <p className="text-[15px] font-medium text-[#1f1d25] leading-tight">3{sep2}9% APR</p>
+              <p className="text-[10px] text-[#9c99a9] mt-0.5">Rate</p>
+            </div>
+            <div>
+              <p className="text-[15px] font-medium text-[#1f1d25] leading-tight">10{sep1}000 {config.distanceUnit}</p>
+              <p className="text-[10px] text-[#9c99a9] mt-0.5">Distance / year</p>
+            </div>
+            <div>
+              <p className="text-[15px] font-medium text-[#1f1d25] leading-tight">{previewFuel}</p>
+              <p className="text-[10px] text-[#9c99a9] mt-0.5">Fuel efficiency</p>
+            </div>
+            <div>
+              <p className="text-[15px] font-medium text-[#1f1d25] leading-tight">{previewDate}</p>
+              <p className="text-[10px] text-[#9c99a9] mt-0.5">Date</p>
+            </div>
+          </div>
         </div>
       </div>
 
