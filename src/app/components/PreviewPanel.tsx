@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, Info, RotateCcw, RotateCw, SlidersHorizontal,
@@ -688,16 +688,51 @@ function MediaPickerMenu({
     return () => { clearTimeout(t); document.removeEventListener('mousedown', handler); };
   }, [isOpen, onClose]);
 
+  const [pos,     setPos]     = useState({ top: 0, left: 0 });
+  const [visible, setVisible] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!isOpen || !anchorRect) return;
+    setVisible(false);
+    // Defer one frame so the menu is rendered (hidden) before measuring
+    const raf = requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      const menuH = el.offsetHeight;
+      const menuW = el.offsetWidth;
+      const vw    = window.innerWidth;
+      const vh    = window.innerHeight;
+      const GAP    = 6;
+      const MARGIN = 8;
+
+      // Prefer below anchor; flip above if it would clip the bottom edge
+      let top = anchorRect.bottom + GAP;
+      if (top + menuH > vh - MARGIN) {
+        const topIfAbove = anchorRect.top - menuH - GAP;
+        top = topIfAbove >= MARGIN ? topIfAbove : Math.max(MARGIN, vh - menuH - MARGIN);
+      }
+
+      // Clamp horizontally
+      let left = anchorRect.left;
+      if (left + menuW > vw - MARGIN) left = vw - menuW - MARGIN;
+      left = Math.max(MARGIN, left);
+
+      setPos({ top, left });
+      setVisible(true);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [isOpen, anchorRect]);
+
   if (!isOpen || !anchorRect) return null;
-  const top  = anchorRect.bottom + 6;
-  const left = anchorRect.left;
 
   return createPortal(
     <div
       ref={ref}
       className="fixed z-[9999] w-[200px] bg-white rounded-[4px] py-1 overflow-hidden"
       style={{
-        top, left,
+        top:        pos.top,
+        left:       pos.left,
+        visibility: visible ? 'visible' : 'hidden',
         boxShadow: '0px 3px 14px 2px rgba(0,0,0,0.12), 0px 8px 10px 1px rgba(0,0,0,0.14), 0px 5px 5px -3px rgba(0,0,0,0.20)',
       }}
       onClick={e => e.stopPropagation()}
