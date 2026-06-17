@@ -380,6 +380,35 @@ export function PageStrip() {
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
+  // Sort state and derived values must come before the effects that use them
+  const [sortOrder, setSortOrder] = React.useState<'default' | 'shortest' | 'longest'>('default');
+
+  const textColumns = React.useMemo(() => {
+    const mediaValues = new Set(Object.values(feedState.mediaColMap));
+    return Object.values(feedState.columnMapping).filter(col => !mediaValues.has(col));
+  }, [feedState.columnMapping, feedState.mediaColMap]);
+
+  const hasTextFields = textColumns.length > 0 && variants.length > 0;
+
+  const copyLengthMap = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const v of variants) {
+      map.set(v.id, textColumns.reduce((sum, col) => sum + (v.rowData[col]?.length ?? 0), 0));
+    }
+    return map;
+  }, [variants, textColumns]);
+
+  // Only reorders display — never mutates the store
+  const sortedVariants = React.useMemo(() => {
+    if (sortOrder === 'default') return variants;
+    const copy = [...variants];
+    copy.sort((a, b) => {
+      const diff = (copyLengthMap.get(a.id) ?? 0) - (copyLengthMap.get(b.id) ?? 0);
+      return sortOrder === 'shortest' ? diff : -diff;
+    });
+    return copy;
+  }, [variants, sortOrder, copyLengthMap]);
+
   // Scroll active card into view whenever activeVariantId changes
   React.useEffect(() => {
     const container = scrollRef.current;
@@ -404,38 +433,7 @@ export function PageStrip() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [sortedVariants, activeVariantId, switchToPage]);
-
-  type SortOrder = 'default' | 'shortest' | 'longest';
-  const [sortOrder, setSortOrder] = React.useState<SortOrder>('default');
-
-  // Derive text-only columns (exclude media-mapped columns)
-  const textColumns = React.useMemo(() => {
-    const mediaValues = new Set(Object.values(feedState.mediaColMap));
-    return Object.values(feedState.columnMapping).filter(col => !mediaValues.has(col));
-  }, [feedState.columnMapping, feedState.mediaColMap]);
-
-  const hasTextFields = textColumns.length > 0 && variants.length > 0;
-
-  // Per-variant copy length (stable, used for sorting)
-  const copyLengthMap = React.useMemo(() => {
-    const map = new Map<string, number>();
-    for (const v of variants) {
-      map.set(v.id, textColumns.reduce((sum, col) => sum + (v.rowData[col]?.length ?? 0), 0));
-    }
-    return map;
-  }, [variants, textColumns]);
-
-  // Sorted variant list — only reorders display, never mutates the store
-  const sortedVariants = React.useMemo(() => {
-    if (sortOrder === 'default') return variants;
-    const copy = [...variants];
-    copy.sort((a, b) => {
-      const diff = (copyLengthMap.get(a.id) ?? 0) - (copyLengthMap.get(b.id) ?? 0);
-      return sortOrder === 'shortest' ? diff : -diff;
-    });
-    return copy;
-  }, [variants, sortOrder, copyLengthMap]);
+  }, [sortedVariants, activeVariantId, switchToPage, variants.length]);
 
   if (variants.length === 0) return null;
 
