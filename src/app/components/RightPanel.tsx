@@ -1,4 +1,5 @@
 import { BrandKitSelector } from './BrandKitSelector';
+import { FontFamilySelector } from './FontFamilySelector';
 import { useState } from 'react';
 import {
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
@@ -155,15 +156,55 @@ function TextPropertiesPanel({ element }: { element: CanvasElement | undefined }
   const [fillVisible, setFillVisible] = useState(true);
   const [brandKit, setBrandKit] = useState('');
 
-  // V55: read font-size directly from the element's style so it reflects
-  // resize changes in real time. Fall back to textProps for other properties.
-  const elementFontSize = element?.style?.fontSize ?? textProps.fontSize;
+  // ── Helpers: read from element.style, fall back to textProps ──────────────
+  const st = element?.style;
 
-  // Resolve fill colour — prefer element style, fall back to textProps
-  const fillColorHex = element?.style?.color ?? `#${textProps.fillColor}`;
-  const fillOpacity  = element?.style?.opacity !== undefined
-    ? Math.round(element.style.opacity * 100)
+  const fontFamily    = st?.fontFamily    ?? textProps.fontFamily;
+  const fontWeight    = st?.fontWeight    ?? textProps.fontWeight;
+  const fontSize      = st?.fontSize      ?? textProps.fontSize;
+  const letterSpacing = st?.letterSpacing ?? textProps.letterSpacing;
+  const lineHeight    = st?.lineHeight    ?? textProps.lineHeight;
+  const textAlign     = st?.textAlign     ?? textProps.textAlign;
+  const verticalAlign = st?.verticalAlign ?? textProps.verticalAlign;
+  const isItalic      = st?.italic        ?? textProps.italic;
+  const isUnderline   = st?.underline     ?? textProps.underline;
+  const isStrike      = st?.strikethrough ?? textProps.strikethrough;
+  const isUppercase   = st?.textTransform === 'uppercase';
+
+  /** Write a style property to the element (and keep global textProps in sync). */
+  function setStyle(patch: Partial<NonNullable<CanvasElement['style']>>) {
+    if (element) updateElement(element.id, { style: { ...st, ...patch } });
+  }
+
+  // Resolve fill colour
+  const fillColorHex = st?.color ?? `#${textProps.fillColor}`;
+  const fillOpacity  = st?.opacity !== undefined
+    ? Math.round(st.opacity * 100)
     : textProps.fillOpacity;
+
+  // ── Numeric spinner ───────────────────────────────────────────────────────
+  function NumSpinner({
+    value, min = 0, step = 1,
+    onCommit,
+  }: {
+    value: number; min?: number; step?: number;
+    onCommit: (v: number) => void;
+  }) {
+    return (
+      <div className="flex items-center bg-[#f5f5f5] border border-[#E2E2E2] rounded-lg px-2 py-1.5 gap-1 min-w-0">
+        <input
+          type="number"
+          value={Math.round(value * 10) / 10}
+          onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= min) onCommit(v); }}
+          className="flex-1 min-w-0 text-[11px] text-[#111111] bg-transparent outline-none text-center"
+        />
+        <div className="flex flex-col shrink-0">
+          <button onClick={() => onCommit(Math.round((value + step) * 10) / 10)} className="text-[7px] text-[#6B6B6B] leading-none">▲</button>
+          <button onClick={() => onCommit(Math.max(min, Math.round((value - step) * 10) / 10))} className="text-[7px] text-[#6B6B6B] leading-none">▼</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -178,88 +219,72 @@ function TextPropertiesPanel({ element }: { element: CanvasElement | undefined }
 
       <Separator className="my-2" />
 
-      {/* Text */}
+      {/* Section header */}
       <div className="flex items-center justify-between mb-2">
         <SectionLabel>Text</SectionLabel>
         <button className="text-[#6B6B6B] hover:text-[#111111]"><Settings size={12} /></button>
       </div>
 
-      {/* Font family */}
-      <div className="relative mb-2 w-full">
-        <select value={textProps.fontFamily} onChange={e => setTextProp('fontFamily', e.target.value)}
-          className="w-full appearance-none bg-[#f5f5f5] border border-[#E2E2E2] rounded-lg px-3 py-2 text-[11px] text-[#111111] pr-6">
-          {['Roboto', 'Inter', 'Helvetica', 'Arial', 'Georgia'].map(f => <FontFamilyOption key={f} value={f} />)}
-        </select>
-        <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6B6B6B] pointer-events-none" />
+      {/* Font family — custom selector with search + upload */}
+      <div className="mb-2 w-full">
+        <FontFamilySelector
+          value={fontFamily}
+          onChange={family => {
+            setStyle({ fontFamily: family });
+            setTextProp('fontFamily', family);
+          }}
+        />
       </div>
 
       {/* Weight + size */}
       <div className="grid grid-cols-2 gap-2 mb-2 w-full">
+        {/* Font weight */}
         <div className="relative min-w-0">
-          <select value={textProps.fontWeight} onChange={e => setTextProp('fontWeight', e.target.value)}
-            className="w-full appearance-none bg-[#f5f5f5] border border-[#E2E2E2] rounded-lg px-2 py-2 text-[11px] text-[#111111] pr-5">
+          <select
+            value={fontWeight}
+            onChange={e => {
+              setStyle({ fontWeight: e.target.value });
+              setTextProp('fontWeight', e.target.value);
+            }}
+            className="w-full appearance-none bg-[#f5f5f5] border border-[#E2E2E2] rounded-lg px-2 py-2 text-[11px] text-[#111111] pr-5"
+          >
             {['Thin', 'Light', 'Regular', 'Medium', 'SemiBold', 'Bold', 'ExtraBold', 'Black'].map(w => (
-              <FontWeightOption key={w} value={w} />
+              <option key={w} value={w}>{w}</option>
             ))}
           </select>
           <ChevronDown size={11} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[#6B6B6B] pointer-events-none" />
         </div>
-        {/* V55: font-size reflects resize in real time — reads element.style.fontSize */}
-        <div className="flex items-center bg-[#f5f5f5] border border-[#E2E2E2] rounded-lg px-2 py-1.5 gap-1 min-w-0">
-          <input
-            type="number"
-            value={Math.round(elementFontSize)}
-            onChange={e => {
-              const val = Number(e.target.value);
-              if (!isNaN(val) && val > 0) {
-                if (element) {
-                  updateElement(element.id, { style: { ...element.style, fontSize: val } });
-                } else {
-                  setTextProp('fontSize', val);
-                }
-              }
-            }}
-            className="flex-1 min-w-0 text-[11px] text-[#111111] bg-transparent outline-none text-center"
-          />
-          <div className="flex flex-col gap-0 shrink-0">
-            <button
-              onClick={() => {
-                if (element) {
-                  updateElement(element.id, { style: { ...element.style, fontSize: Math.round(elementFontSize) + 1 } });
-                } else {
-                  setTextProp('fontSize', textProps.fontSize + 1);
-                }
-              }}
-              className="text-[7px] text-[#6B6B6B] leading-none"
-            >▲</button>
-            <button
-              onClick={() => {
-                const next = Math.max(1, Math.round(elementFontSize) - 1);
-                if (element) {
-                  updateElement(element.id, { style: { ...element.style, fontSize: next } });
-                } else {
-                  setTextProp('fontSize', next);
-                }
-              }}
-              className="text-[7px] text-[#6B6B6B] leading-none"
-            >▼</button>
-          </div>
-        </div>
+        {/* Font size */}
+        <NumSpinner
+          value={fontSize}
+          min={1}
+          onCommit={v => {
+            setStyle({ fontSize: v });
+            setTextProp('fontSize', v);
+          }}
+        />
       </div>
 
       {/* Letter spacing + line height */}
       <div className="grid grid-cols-2 gap-2 mb-2 w-full">
-        {[
-          { label: 'A|', key: 'letterSpacing' as const, val: textProps.letterSpacing },
-          { label: 'Ā',  key: 'lineHeight'    as const, val: textProps.lineHeight    },
-        ].map(({ label, key, val }) => (
-          <div key={key} className="flex items-center gap-1 min-w-0 bg-[#f5f5f5] border border-[#E2E2E2] rounded-lg px-2 py-1.5">
+        {([
+          { label: 'A|', val: letterSpacing, step: 0.5,
+            onCommit: (v: number) => { setStyle({ letterSpacing: v }); setTextProp('letterSpacing', v); } },
+          { label: 'Ā',  val: typeof lineHeight === 'number' ? lineHeight : 1.2, step: 0.1,
+            onCommit: (v: number) => { setStyle({ lineHeight: v }); setTextProp('lineHeight', v); } },
+        ] as const).map(({ label, val, step, onCommit }) => (
+          <div key={label} className="flex items-center gap-1 min-w-0 bg-[#f5f5f5] border border-[#E2E2E2] rounded-lg px-2 py-1.5">
             <span className="text-[9px] text-[#6B6B6B] shrink-0 font-medium">{label}</span>
-            <input type="number" value={val} onChange={e => setTextProp(key, Number(e.target.value))}
-              className="flex-1 min-w-0 text-[11px] text-[#111111] bg-transparent outline-none text-center" />
+            <input
+              type="number"
+              value={Math.round(val * 100) / 100}
+              step={step}
+              onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) onCommit(v); }}
+              className="flex-1 min-w-0 text-[11px] text-[#111111] bg-transparent outline-none text-center"
+            />
             <div className="flex flex-col shrink-0">
-              <button onClick={() => setTextProp(key, (val as number) + 1)} className="text-[7px] text-[#6B6B6B] leading-none">▲</button>
-              <button onClick={() => setTextProp(key, Math.max(0, (val as number) - 1))} className="text-[7px] text-[#6B6B6B] leading-none">▼</button>
+              <button onClick={() => onCommit(Math.round((val + step) * 100) / 100)} className="text-[7px] text-[#6B6B6B] leading-none">▲</button>
+              <button onClick={() => onCommit(Math.max(0, Math.round((val - step) * 100) / 100))} className="text-[7px] text-[#6B6B6B] leading-none">▼</button>
             </div>
           </div>
         ))}
@@ -268,38 +293,57 @@ function TextPropertiesPanel({ element }: { element: CanvasElement | undefined }
       {/* Text alignment */}
       <div className="flex items-center justify-between mb-1.5 w-full">
         <div className="flex items-center gap-0.5">
-          {[
-            { icon: <AlignLeft size={13} />,    align: 'left'    as const },
-            { icon: <AlignCenter size={13} />,  align: 'center'  as const },
-            { icon: <AlignRight size={13} />,   align: 'right'   as const },
-            { icon: <AlignJustify size={13} />, align: 'justify' as const },
-          ].map(({ icon, align }) => (
-            <AlignBtn key={align} active={textProps.textAlign === align} onClick={() => setTextProp('textAlign', align)}>{icon}</AlignBtn>
+          {([
+            { icon: <AlignLeft size={13} />,    align: 'left'    },
+            { icon: <AlignCenter size={13} />,  align: 'center'  },
+            { icon: <AlignRight size={13} />,   align: 'right'   },
+            { icon: <AlignJustify size={13} />, align: 'justify' },
+          ] as const).map(({ icon, align }) => (
+            <AlignBtn key={align} active={textAlign === align}
+              onClick={() => { setStyle({ textAlign: align }); setTextProp('textAlign', align); }}>
+              {icon}
+            </AlignBtn>
           ))}
         </div>
         <div className="w-px h-5 bg-[#E2E2E2]" />
         <div className="flex items-center gap-0.5">
-          {[
-            { icon: <AlignVerticalJustifyStart  size={13} />, align: 'top'    as const },
-            { icon: <AlignVerticalJustifyCenter size={13} />, align: 'middle' as const },
-            { icon: <AlignVerticalJustifyEnd    size={13} />, align: 'bottom' as const },
-          ].map(({ icon, align }) => (
-            <AlignBtn key={align} active={textProps.verticalAlign === align} onClick={() => setTextProp('verticalAlign', align)}>{icon}</AlignBtn>
+          {([
+            { icon: <AlignVerticalJustifyStart  size={13} />, align: 'top'    },
+            { icon: <AlignVerticalJustifyCenter size={13} />, align: 'middle' },
+            { icon: <AlignVerticalJustifyEnd    size={13} />, align: 'bottom' },
+          ] as const).map(({ icon, align }) => (
+            <AlignBtn key={align} active={verticalAlign === align}
+              onClick={() => { setStyle({ verticalAlign: align }); setTextProp('verticalAlign', align); }}>
+              {icon}
+            </AlignBtn>
           ))}
         </div>
       </div>
 
-      {/* Bold / Italic / etc. */}
+      {/* Bold / Italic / Underline / Strikethrough / Uppercase */}
       <div className="flex items-center gap-0.5 mb-3 w-full">
-        {[
-          { icon: <Bold size={13} />,          prop: 'bold'          as const },
-          { icon: <Italic size={13} />,        prop: 'italic'        as const },
-          { icon: <Underline size={13} />,     prop: 'underline'     as const },
-          { icon: <Strikethrough size={13} />, prop: 'strikethrough' as const },
-        ].map(({ icon, prop }) => (
-          <AlignBtn key={prop} active={textProps[prop] as boolean} onClick={() => setTextProp(prop, !textProps[prop])}>{icon}</AlignBtn>
-        ))}
-        <AlignBtn active={false} onClick={() => {}}>
+        <AlignBtn active={fontWeight === 'Bold' || fontWeight === 'ExtraBold' || fontWeight === 'Black'}
+          onClick={() => {
+            const next = (fontWeight === 'Bold' || fontWeight === 'ExtraBold' || fontWeight === 'Black') ? 'Regular' : 'Bold';
+            setStyle({ fontWeight: next });
+            setTextProp('fontWeight', next);
+          }}>
+          <Bold size={13} />
+        </AlignBtn>
+        <AlignBtn active={isItalic}
+          onClick={() => { setStyle({ italic: !isItalic }); setTextProp('italic', !isItalic); }}>
+          <Italic size={13} />
+        </AlignBtn>
+        <AlignBtn active={isUnderline}
+          onClick={() => { setStyle({ underline: !isUnderline }); setTextProp('underline', !isUnderline); }}>
+          <Underline size={13} />
+        </AlignBtn>
+        <AlignBtn active={isStrike}
+          onClick={() => { setStyle({ strikethrough: !isStrike }); setTextProp('strikethrough', !isStrike); }}>
+          <Strikethrough size={13} />
+        </AlignBtn>
+        <AlignBtn active={isUppercase}
+          onClick={() => { const t = isUppercase ? 'none' : 'uppercase'; setStyle({ textTransform: t }); }}>
           <span className="text-[10px] font-semibold">Aa</span>
         </AlignBtn>
       </div>
@@ -678,9 +722,7 @@ export function RightPanel() {
   } = useDesignWorkspace();
 
   // ── Priority-based visibility ─────────────────────────────────────
-  // Hide completely when preview mode is active — PreviewPanel takes over
-  if (isPreviewMode) return null;
-
+  // In preview mode: only show when an element is selected (properties editing).
   const isSettings        = activePanel === 'settings';
   const isConfigure       = activePanel === 'configure';
   const hasSingleSelection = selectedElementIds.length === 1;
@@ -688,7 +730,9 @@ export function RightPanel() {
   const hasSelection       = selectedElementIds.length > 0;
   const showActivity = activityPanelOpen && !hasSelection && !isSettings && !isConfigure;
 
-  const isVisible = isSettings || isConfigure || hasSelection || showActivity;
+  const isVisible = isPreviewMode
+    ? hasSelection   // preview mode: only show when something is selected
+    : isSettings || isConfigure || hasSelection || showActivity;
   if (!isVisible) return null;
 
   // ── Content router ─────────────────────────────────────────────────

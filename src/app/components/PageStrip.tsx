@@ -5,7 +5,7 @@ import {
   User, Users, Smile, Settings, Trophy, Lightbulb, Plane, Anchor, Clock,
   ChevronsLeftRight, Triangle, Maximize2, Mountain, Image as ImageIcon,
   UserPlus, UserMinus, UserCheck, Bot, Coffee, Bug, Infinity, Accessibility,
-  Landmark, Zap, Check, ChevronRight as ChevronRightIcon,
+  Landmark, Zap, Check, ChevronRight as ChevronRightIcon, ChevronDown,
 } from 'lucide-react';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
 import type { CanvasElement } from '../store/useDesignWorkspaceStore';
@@ -373,6 +373,7 @@ export function PageStrip() {
     activityPanelOpen,
     isTimelineVisible,
     isTimelineExpanded,
+    feedState,
   } = useDesignWorkspace();
 
   const masterThumbElements = activeVariantId === null ? canvasElements : masterElements;
@@ -386,7 +387,6 @@ export function PageStrip() {
     const pageId = activeVariantId ?? 'master';
     const card = container.querySelector<HTMLElement>(`[data-page-id="${pageId}"]`);
     if (!card) return;
-    // Smooth-scroll so the card is fully visible inside the strip
     card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   }, [activeVariantId]);
 
@@ -405,6 +405,27 @@ export function PageStrip() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [variants, activeVariantId, switchToPage]);
+
+  // Derive text-only columns (exclude media-mapped columns)
+  const textColumns = React.useMemo(() => {
+    const mediaValues = new Set(Object.values(feedState.mediaColMap));
+    return Object.values(feedState.columnMapping).filter(col => !mediaValues.has(col));
+  }, [feedState.columnMapping, feedState.mediaColMap]);
+
+  const hasTextFields = textColumns.length > 0 && variants.length > 0;
+
+  // Find shortest / longest copy row IDs (Master excluded)
+  const { shortestId, longestId } = React.useMemo(() => {
+    if (!hasTextFields) return { shortestId: null as string | null, longestId: null as string | null };
+    let minLen = Infinity, maxLen = -1;
+    let sId = variants[0].id, lId = variants[0].id;
+    for (const v of variants) {
+      const len = textColumns.reduce((sum, col) => sum + (v.rowData[col]?.length ?? 0), 0);
+      if (len < minLen) { minLen = len; sId = v.id; }
+      if (len > maxLen) { maxLen = len; lId = v.id; }
+    }
+    return { shortestId: sId, longestId: lId };
+  }, [variants, textColumns, hasTextFields]);
 
   if (variants.length === 0) return null;
 
@@ -428,9 +449,16 @@ export function PageStrip() {
   const THUMB_W = 44;
   const THUMB_H = Math.max(28, Math.round(THUMB_W * canvasHeight / canvasWidth));
 
+  const jumpBtnBase =
+    'text-[10px] font-medium rounded-md px-2 h-[22px] border transition-colors shrink-0';
+  const jumpBtnEnabled =
+    `${jumpBtnBase} text-[#3D3A4B] bg-[#F5F5F7] border-[#E2E2E2] hover:bg-[#EBEBED] cursor-pointer`;
+  const jumpBtnDisabled =
+    `${jumpBtnBase} text-[#C0BEC8] bg-[#F5F5F7] border-[#EEEEEE] cursor-not-allowed`;
+
   return (
     <div
-      className="absolute z-20 bg-white rounded-2xl shadow-lg overflow-hidden"
+      className="absolute z-20 bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col"
       style={{
         bottom,
         left:   leftPosition,
@@ -440,7 +468,51 @@ export function PageStrip() {
       }}
       onClick={e => e.stopPropagation()}
     >
-      <div ref={scrollRef} className="flex items-center h-full px-3 gap-2.5 overflow-x-auto">
+      {/* ── Jump to bar ── */}
+      <div className="flex items-center gap-1.5 px-3 shrink-0 border-b border-[#F0F0F0]" style={{ height: 32 }}>
+        <span className="text-[10px] font-medium text-[#A8A5B4] shrink-0 mr-0.5">Jump to:</span>
+
+        <button
+          disabled={!hasTextFields}
+          className={hasTextFields ? jumpBtnEnabled : jumpBtnDisabled}
+          onClick={() => shortestId && switchToPage(shortestId)}
+        >
+          Shortest Copy
+        </button>
+
+        <button
+          disabled={!hasTextFields}
+          className={hasTextFields ? jumpBtnEnabled : jumpBtnDisabled}
+          onClick={() => longestId && switchToPage(longestId)}
+        >
+          Longest Copy
+        </button>
+
+        {/* Row selector */}
+        <div className="relative ml-auto shrink-0">
+          <select
+            value={activeVariantId ?? 'master'}
+            onChange={e => {
+              const val = e.target.value;
+              switchToPage(val === 'master' ? null : val);
+            }}
+            className="text-[10px] font-medium text-[#3D3A4B] bg-[#F5F5F7] border border-[#E2E2E2] rounded-md pl-2 pr-5 h-[22px] appearance-none cursor-pointer"
+            style={{ minWidth: 64 }}
+          >
+            <option value="master">Master</option>
+            {variants.map(v => (
+              <option key={v.id} value={v.id}>{v.name}</option>
+            ))}
+          </select>
+          <ChevronDown
+            size={9}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-[#6B6B6B]"
+          />
+        </div>
+      </div>
+
+      {/* ── Carousel ── */}
+      <div ref={scrollRef} className="flex items-center flex-1 min-h-0 px-3 gap-2.5 overflow-x-auto">
         {/* Master card */}
         <PageCard
           label="Master"

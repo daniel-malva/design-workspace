@@ -44,4 +44,4 @@ export const ZOOM_TOOLBAR_BOTTOM_WITH_TIMELINE =
 export const ZOOM_TOOLBAR_BOTTOM_NO_TIMELINE =
   PANEL_GAP                                          // 8px
 
-export const PAGE_STRIP_HEIGHT = 80   // px — per-row variant thumbnails strip
+export const PAGE_STRIP_HEIGHT = 112  // px — jump-to bar (32) + variant thumbnails carousel (80)
