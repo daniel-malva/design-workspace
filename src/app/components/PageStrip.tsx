@@ -5,7 +5,7 @@ import {
   User, Users, Smile, Settings, Trophy, Lightbulb, Plane, Anchor, Clock,
   ChevronsLeftRight, Triangle, Maximize2, Mountain, Image as ImageIcon,
   UserPlus, UserMinus, UserCheck, Bot, Coffee, Bug, Infinity, Accessibility,
-  Landmark, Zap, Check, ChevronRight as ChevronRightIcon, ChevronDown,
+  Landmark, Zap, Check, ChevronRight as ChevronRightIcon, ChevronDown, ArrowUpDown,
 } from 'lucide-react';
 import { useDesignWorkspace } from '../store/useDesignWorkspaceStore';
 import type { CanvasElement } from '../store/useDesignWorkspaceStore';
@@ -390,10 +390,10 @@ export function PageStrip() {
     card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   }, [activeVariantId]);
 
-  // Keyboard navigation: ArrowLeft / ArrowRight moves through Master + variants
+  // Keyboard navigation: ArrowLeft / ArrowRight follows current sort order
   React.useEffect(() => {
     if (variants.length === 0) return;
-    const pages: Array<string | null> = [null, ...variants.map(v => v.id)];
+    const pages: Array<string | null> = [null, ...sortedVariants.map(v => v.id)];
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -404,7 +404,10 @@ export function PageStrip() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [variants, activeVariantId, switchToPage]);
+  }, [sortedVariants, activeVariantId, switchToPage]);
+
+  type SortOrder = 'default' | 'shortest' | 'longest';
+  const [sortOrder, setSortOrder] = React.useState<SortOrder>('default');
 
   // Derive text-only columns (exclude media-mapped columns)
   const textColumns = React.useMemo(() => {
@@ -414,18 +417,25 @@ export function PageStrip() {
 
   const hasTextFields = textColumns.length > 0 && variants.length > 0;
 
-  // Find shortest / longest copy row IDs (Master excluded)
-  const { shortestId, longestId } = React.useMemo(() => {
-    if (!hasTextFields) return { shortestId: null as string | null, longestId: null as string | null };
-    let minLen = Infinity, maxLen = -1;
-    let sId = variants[0].id, lId = variants[0].id;
+  // Per-variant copy length (stable, used for sorting)
+  const copyLengthMap = React.useMemo(() => {
+    const map = new Map<string, number>();
     for (const v of variants) {
-      const len = textColumns.reduce((sum, col) => sum + (v.rowData[col]?.length ?? 0), 0);
-      if (len < minLen) { minLen = len; sId = v.id; }
-      if (len > maxLen) { maxLen = len; lId = v.id; }
+      map.set(v.id, textColumns.reduce((sum, col) => sum + (v.rowData[col]?.length ?? 0), 0));
     }
-    return { shortestId: sId, longestId: lId };
-  }, [variants, textColumns, hasTextFields]);
+    return map;
+  }, [variants, textColumns]);
+
+  // Sorted variant list — only reorders display, never mutates the store
+  const sortedVariants = React.useMemo(() => {
+    if (sortOrder === 'default') return variants;
+    const copy = [...variants];
+    copy.sort((a, b) => {
+      const diff = (copyLengthMap.get(a.id) ?? 0) - (copyLengthMap.get(b.id) ?? 0);
+      return sortOrder === 'shortest' ? diff : -diff;
+    });
+    return copy;
+  }, [variants, sortOrder, copyLengthMap]);
 
   if (variants.length === 0) return null;
 
@@ -449,12 +459,10 @@ export function PageStrip() {
   const THUMB_W = 44;
   const THUMB_H = Math.max(28, Math.round(THUMB_W * canvasHeight / canvasWidth));
 
-  const jumpBtnBase =
-    'text-[10px] font-medium rounded-md px-2 h-[22px] border transition-colors shrink-0';
-  const jumpBtnEnabled =
-    `${jumpBtnBase} text-[#3D3A4B] bg-[#F5F5F7] border-[#E2E2E2] hover:bg-[#EBEBED] cursor-pointer`;
-  const jumpBtnDisabled =
-    `${jumpBtnBase} text-[#C0BEC8] bg-[#F5F5F7] border-[#EEEEEE] cursor-not-allowed`;
+  const selectClass =
+    'text-[10px] font-medium text-[#3D3A4B] bg-[#F5F5F7] border border-[#E2E2E2] rounded-md pl-2 pr-5 h-[22px] appearance-none cursor-pointer';
+  const selectDisabledClass =
+    'text-[10px] font-medium text-[#C0BEC8] bg-[#F5F5F7] border border-[#EEEEEE] rounded-md pl-2 pr-5 h-[22px] appearance-none cursor-not-allowed';
 
   return (
     <div
@@ -468,25 +476,30 @@ export function PageStrip() {
       }}
       onClick={e => e.stopPropagation()}
     >
-      {/* ── Jump to bar ── */}
-      <div className="flex items-center gap-1.5 px-3 shrink-0 border-b border-[#F0F0F0]" style={{ height: 32 }}>
-        <span className="text-[10px] font-medium text-[#A8A5B4] shrink-0 mr-0.5">Jump to:</span>
+      {/* ── Controls bar ── */}
+      <div className="flex items-center gap-2 px-3 shrink-0 border-b border-[#F0F0F0]" style={{ height: 32 }}>
 
-        <button
-          disabled={!hasTextFields}
-          className={hasTextFields ? jumpBtnEnabled : jumpBtnDisabled}
-          onClick={() => shortestId && switchToPage(shortestId)}
-        >
-          Shortest Copy
-        </button>
-
-        <button
-          disabled={!hasTextFields}
-          className={hasTextFields ? jumpBtnEnabled : jumpBtnDisabled}
-          onClick={() => longestId && switchToPage(longestId)}
-        >
-          Longest Copy
-        </button>
+        {/* Sort control */}
+        <div className="relative shrink-0 flex items-center gap-1.5">
+          <ArrowUpDown size={10} className="text-[#A8A5B4] shrink-0" />
+          <div className="relative">
+            <select
+              disabled={!hasTextFields}
+              value={hasTextFields ? sortOrder : 'default'}
+              onChange={e => setSortOrder(e.target.value as SortOrder)}
+              className={hasTextFields ? selectClass : selectDisabledClass}
+              style={{ minWidth: 96 }}
+            >
+              <option value="default">Default order</option>
+              <option value="shortest">Shortest first</option>
+              <option value="longest">Longest first</option>
+            </select>
+            <ChevronDown
+              size={9}
+              className={`absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none ${hasTextFields ? 'text-[#6B6B6B]' : 'text-[#C0BEC8]'}`}
+            />
+          </div>
+        </div>
 
         {/* Row selector */}
         <div className="relative ml-auto shrink-0">
@@ -496,7 +509,7 @@ export function PageStrip() {
               const val = e.target.value;
               switchToPage(val === 'master' ? null : val);
             }}
-            className="text-[10px] font-medium text-[#3D3A4B] bg-[#F5F5F7] border border-[#E2E2E2] rounded-md pl-2 pr-5 h-[22px] appearance-none cursor-pointer"
+            className={selectClass}
             style={{ minWidth: 64 }}
           >
             <option value="master">Master</option>
@@ -530,8 +543,8 @@ export function PageStrip() {
         {/* Separator */}
         <div className="w-px h-8 bg-[#E2E2E2] shrink-0" />
 
-        {/* Variant cards */}
-        {variants.map(v => (
+        {/* Variant cards in sort order */}
+        {sortedVariants.map(v => (
           <PageCard
             key={v.id}
             label={v.name}
