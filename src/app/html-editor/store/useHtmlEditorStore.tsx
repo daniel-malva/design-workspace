@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 
 // ─── Domain types ─────────────────────────────────────────────────
 
+export type ActiveFile = 'html' | 'css' | 'js';
+
 export type HtmlRailItem =
   | 'code'
   | 'insert'
@@ -40,6 +42,9 @@ interface HtmlEditorState {
   document: HtmlEditorDocument;
   status: HtmlEditorStatus;
   activeRailItem: HtmlRailItem;
+  activeFile: ActiveFile;
+  cssContent: string;
+  jsContent: string;
   zoomLevel: number;
   fitMode: boolean;
   agentMessages: AgentMessage[];
@@ -47,6 +52,8 @@ interface HtmlEditorState {
   previewRefreshKey: number;
   // actions
   setHtml: (html: string) => void;
+  setActiveFile: (file: ActiveFile) => void;
+  setFileContent: (file: ActiveFile, content: string) => void;
   setStatus: (status: HtmlEditorStatus) => void;
   setActiveRailItem: (item: HtmlRailItem) => void;
   setZoomLevel: (zoom: number) => void;
@@ -153,6 +160,9 @@ export function HtmlEditorProvider({ children }: { children: React.ReactNode }) 
   });
   const [status, setStatus] = useState<HtmlEditorStatus>('idle');
   const [activeRailItem, setActiveRailItem] = useState<HtmlRailItem>('code');
+  const [activeFile, setActiveFile] = useState<ActiveFile>('html');
+  const [cssContent, setCssContent] = useState('');
+  const [jsContent, setJsContent] = useState('');
   const [zoomLevel, setZoomLevelRaw] = useState(100);
   const [fitMode, setFitMode] = useState(true);
   const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
@@ -161,6 +171,12 @@ export function HtmlEditorProvider({ children }: { children: React.ReactNode }) 
 
   const setHtml = useCallback((html: string) => {
     setDocument(prev => ({ ...prev, html, updatedAt: new Date().toISOString() }));
+  }, []);
+
+  const setFileContent = useCallback((file: ActiveFile, content: string) => {
+    if (file === 'html') setDocument(prev => ({ ...prev, html: content, updatedAt: new Date().toISOString() }));
+    else if (file === 'css') setCssContent(content);
+    else if (file === 'js') setJsContent(content);
   }, []);
 
   const sendAgentMessage = useCallback((content: string) => {
@@ -199,12 +215,17 @@ export function HtmlEditorProvider({ children }: { children: React.ReactNode }) 
         document,
         status,
         activeRailItem,
+        activeFile,
+        cssContent,
+        jsContent,
         zoomLevel,
         fitMode,
         agentMessages,
         agentInput,
         previewRefreshKey,
         setHtml,
+        setActiveFile,
+        setFileContent,
         setStatus,
         setActiveRailItem,
         setZoomLevel,
