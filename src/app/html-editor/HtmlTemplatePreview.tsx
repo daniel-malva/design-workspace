@@ -56,7 +56,7 @@ export function HtmlTemplatePreview() {
   return (
     <div
       ref={containerRef}
-      className="relative flex-1 min-h-0 bg-[#EBEBEB] overflow-auto"
+      className="relative flex-1 min-h-0 bg-[#f4f5f6] rounded-[16px] overflow-auto"
     >
       {/* Dimension badge */}
       <div className="sticky top-4 left-4 z-10 inline-block pointer-events-none ml-4 mt-4">
