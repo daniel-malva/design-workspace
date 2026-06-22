@@ -22,20 +22,20 @@ function SaveSplitButton() {
   return (
     <TooltipProvider delayDuration={400}>
       <div className="flex items-center gap-2">
-        {/* Save split button — outlined primary style from Figma */}
-        <div className="relative flex rounded-lg border border-[#5B4EFF] overflow-hidden">
+        {/* Save split button — pill shape, primary outlined from Figma */}
+        <div className="relative flex rounded-[100px] border border-[rgba(99,86,225,0.5)] overflow-hidden">
           <button
             onClick={handleSave}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-[#5B4EFF] hover:bg-[rgba(91,78,255,0.06)] transition-colors"
+            className="flex items-center gap-1.5 px-[10px] py-[4px] text-[13px] font-medium capitalize text-[#473bab] hover:bg-[rgba(99,86,225,0.06)] transition-colors"
           >
-            <Cloud size={13} />
+            <Cloud size={14} />
             {saving ? 'Saved!' : 'Save'}
           </button>
-          <div className="w-px bg-[#5B4EFF] opacity-30" />
+          <div className="w-px bg-[rgba(99,86,225,0.5)]" />
           <button
             onClick={() => setOpen(o => !o)}
             aria-label="More save options"
-            className="flex items-center px-2 py-1.5 text-[#5B4EFF] hover:bg-[rgba(91,78,255,0.06)] transition-colors"
+            className="flex items-center px-2 py-[4px] text-[#473bab] hover:bg-[rgba(99,86,225,0.06)] transition-colors"
           >
             <ChevronDown size={12} />
           </button>
@@ -62,11 +62,11 @@ function SaveSplitButton() {
           <TooltipTrigger asChild>
             <button
               aria-label="Publish"
-              className="relative flex items-center justify-center w-8 h-8 rounded-full border border-[#5B4EFF] text-[#5B4EFF] hover:bg-[rgba(91,78,255,0.06)] transition-colors"
+              className="relative flex items-center justify-center p-[5px] rounded-full border border-[rgba(99,86,225,0.5)] text-[#473bab] hover:bg-[rgba(99,86,225,0.06)] transition-colors"
             >
-              <CloudUpload size={14} />
+              <CloudUpload size={20} />
               {/* Badge dot */}
-              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white bg-[#5B4EFF]" />
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white bg-[#473bab]" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Publish</TooltipContent>
@@ -79,9 +79,10 @@ function SaveSplitButton() {
 export function HtmlEditorMainArea({ codePanelVisible, onToggleCodePanel }: Props) {
   return (
     <TooltipProvider delayDuration={400}>
-      <div className="flex flex-col w-full h-full bg-white rounded-[16px] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#E2E2E2] shrink-0">
+      {/* Pane: px-16 pb-16, no overflow-hidden (allows save dropdown to escape) */}
+      <div className="relative flex flex-col w-full h-full bg-white rounded-[16px] px-[16px] pb-[16px]">
+        {/* Header — pt-12 pb-8, no border-b */}
+        <div className="flex items-center justify-between pt-[12px] pb-[8px] shrink-0">
           <div className="flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -89,22 +90,24 @@ export function HtmlEditorMainArea({ codePanelVisible, onToggleCodePanel }: Prop
                   onClick={onToggleCodePanel}
                   aria-label={codePanelVisible ? 'Hide code panel' : 'Show code panel'}
                   aria-pressed={codePanelVisible}
-                  className="flex items-center justify-center w-7 h-7 rounded-lg text-[#6B6B6B] hover:bg-[#F5F5F5] transition-colors"
+                  className="flex items-center justify-center p-[5px] rounded-full text-[#6B6B6B] hover:bg-[rgba(0,0,0,0.05)] transition-colors"
                 >
-                  <PanelLeft size={16} />
+                  <PanelLeft size={20} />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom">Toggle code panel</TooltipContent>
             </Tooltip>
-            <span className="text-[13px] font-semibold text-[#1f1d25]">Preview</span>
+            <span className="text-[16px] font-medium tracking-[0.15px] text-[#1f1d25]">Preview</span>
           </div>
           <SaveSplitButton />
         </div>
 
-        {/* Preview + Zoom toolbar */}
-        <div className="flex flex-col flex-1 min-h-0">
+        {/* Preview area — zoom toolbar floats at bottom-left */}
+        <div className="relative flex flex-col flex-1 min-h-0">
           <HtmlTemplatePreview />
-          <HtmlPreviewToolbar />
+          <div className="absolute bottom-[20px] left-[20px] z-10">
+            <HtmlPreviewToolbar />
+          </div>
         </div>
       </div>
     </TooltipProvider>
