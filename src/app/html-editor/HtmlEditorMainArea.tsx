@@ -79,9 +79,9 @@ function SaveSplitButton() {
 export function HtmlEditorMainArea({ codePanelVisible, onToggleCodePanel }: Props) {
   return (
     <TooltipProvider delayDuration={400}>
-      <div className="flex flex-col flex-1 min-w-0 h-full">
+      <div className="flex flex-col flex-1 min-w-0 h-full bg-white rounded-[16px] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#E2E2E2] bg-white shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#E2E2E2] shrink-0">
           <div className="flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>

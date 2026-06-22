@@ -26,7 +26,7 @@ export function HtmlEditorLeftRail() {
   return (
     <TooltipProvider delayDuration={400}>
       <div
-        className="flex flex-col items-center bg-white border-r border-[#E2E2E2] w-[64px] h-full py-2 shrink-0 z-30"
+        className="flex flex-col items-center w-[72px] h-full py-2 shrink-0 z-30"
         role="navigation"
         aria-label="HTML Editor navigation"
       >

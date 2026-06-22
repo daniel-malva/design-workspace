@@ -9,21 +9,24 @@ function HtmlEditorShell() {
   const [codePanelVisible, setCodePanelVisible] = useState(true);
 
   return (
-    <div className="flex w-screen h-screen overflow-hidden bg-white">
-      {/* Left Rail */}
+    <div className="flex w-screen h-screen overflow-hidden bg-[#f0f2f4]">
+      {/* Left Rail — transparent, no border, 72px wide */}
       <HtmlEditorLeftRail />
 
-      {/* Code panel — shown when Code is active */}
-      {codePanelVisible && <HtmlCodePanel />}
+      {/* Body area — gap-[8px] from nav rail, py-[8px] top/bottom, pr-[8px] right */}
+      <div className="flex flex-1 min-w-0 items-start gap-[16px] py-[8px] pr-[8px] h-full">
+        {/* Code panel — shown when Code is active */}
+        {codePanelVisible && <HtmlCodePanel />}
 
-      {/* Main preview area */}
-      <HtmlEditorMainArea
-        codePanelVisible={codePanelVisible}
-        onToggleCodePanel={() => setCodePanelVisible(v => !v)}
-      />
+        {/* Main preview area */}
+        <HtmlEditorMainArea
+          codePanelVisible={codePanelVisible}
+          onToggleCodePanel={() => setCodePanelVisible(v => !v)}
+        />
 
-      {/* Agent panel */}
-      <HtmlAgentPanel />
+        {/* Agent panel */}
+        <HtmlAgentPanel />
+      </div>
     </div>
   );
 }
