@@ -41,6 +41,7 @@ interface HtmlEditorState {
   status: HtmlEditorStatus;
   activeRailItem: HtmlRailItem;
   zoomLevel: number;
+  fitMode: boolean;
   agentMessages: AgentMessage[];
   agentInput: string;
   previewRefreshKey: number;
@@ -49,6 +50,7 @@ interface HtmlEditorState {
   setStatus: (status: HtmlEditorStatus) => void;
   setActiveRailItem: (item: HtmlRailItem) => void;
   setZoomLevel: (zoom: number) => void;
+  setFitMode: (fit: boolean) => void;
   setAgentInput: (input: string) => void;
   sendAgentMessage: (content: string) => void;
   refreshPreview: () => void;
@@ -151,7 +153,8 @@ export function HtmlEditorProvider({ children }: { children: React.ReactNode }) 
   });
   const [status, setStatus] = useState<HtmlEditorStatus>('idle');
   const [activeRailItem, setActiveRailItem] = useState<HtmlRailItem>('code');
-  const [zoomLevel, setZoomLevel] = useState(300);
+  const [zoomLevel, setZoomLevelRaw] = useState(100);
+  const [fitMode, setFitMode] = useState(true);
   const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
   const [agentInput, setAgentInput] = useState('');
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
@@ -185,6 +188,11 @@ export function HtmlEditorProvider({ children }: { children: React.ReactNode }) 
     }, 800);
   }, []);
 
+  const setZoomLevel = useCallback((zoom: number) => {
+    setZoomLevelRaw(zoom);
+    setFitMode(false);
+  }, []);
+
   return (
     <HtmlEditorContext.Provider
       value={{
@@ -192,6 +200,7 @@ export function HtmlEditorProvider({ children }: { children: React.ReactNode }) 
         status,
         activeRailItem,
         zoomLevel,
+        fitMode,
         agentMessages,
         agentInput,
         previewRefreshKey,
@@ -199,6 +208,7 @@ export function HtmlEditorProvider({ children }: { children: React.ReactNode }) 
         setStatus,
         setActiveRailItem,
         setZoomLevel,
+        setFitMode,
         setAgentInput,
         sendAgentMessage,
         refreshPreview: () => setPreviewRefreshKey(k => k + 1),

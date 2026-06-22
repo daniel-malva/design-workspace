@@ -6,9 +6,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../com
 const ZOOM_OPTIONS = [50, 75, 100, 150, 200, 300, 400];
 
 export function HtmlPreviewToolbar() {
-  const { zoomLevel, setZoomLevel, refreshPreview } = useHtmlEditor();
+  const { zoomLevel, setZoomLevel, fitMode, setFitMode, refreshPreview } = useHtmlEditor();
   const [open, setOpen] = useState(false);
-  const [fitMode, setFitMode] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
@@ -36,7 +35,7 @@ export function HtmlPreviewToolbar() {
             aria-expanded={open}
             className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-[#E2E2E2] text-[12px] font-medium text-[#1f1d25] hover:bg-[#F5F5F5] transition-colors"
           >
-            {zoomLevel}%
+            {fitMode ? 'Fit' : `${zoomLevel}%`}
             <ChevronDown size={12} className="text-[#9c99a9]" />
           </button>
           {open && (
@@ -62,7 +61,7 @@ export function HtmlPreviewToolbar() {
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={() => { setFitMode(f => !f); setZoomLevel(100); }}
+              onClick={() => setFitMode(!fitMode)}
               aria-label="Fit to screen"
               aria-pressed={fitMode}
               className={`flex items-center justify-center w-8 h-8 rounded-lg border transition-colors ${
