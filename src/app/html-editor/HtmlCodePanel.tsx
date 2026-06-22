@@ -36,7 +36,7 @@ export function HtmlCodePanel() {
   return (
     <TooltipProvider delayDuration={400}>
       <div
-        className={`flex flex-col h-full ${tokens.panelBg} w-[320px] shrink-0 rounded-[16px] overflow-hidden transition-colors`}
+        className={`flex flex-col h-full w-full ${tokens.panelBg} rounded-[16px] overflow-hidden transition-colors`}
       >
         {/* Header */}
         <div className={`flex items-center gap-1 px-4 py-3 border-b ${tokens.border} shrink-0`}>
