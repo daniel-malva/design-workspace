@@ -3,6 +3,10 @@
     {
       "source": "/gsheets-proxy/:path*",
       "destination": "https://docs.google.com/:path*"
+    },
+    {
+      "source": "/((?!gsheets-proxy/).*)",
+      "destination": "/index.html"
     }
   ]
 }
