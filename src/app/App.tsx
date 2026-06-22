@@ -1,3 +1,4 @@
+import { Routes, Route } from 'react-router';
 import { DesignWorkspaceProvider } from './store/useDesignWorkspaceStore';
 import { LeftRail } from './components/LeftRail';
 import { LeftPane } from './components/LeftPane';
@@ -7,42 +8,39 @@ import { PreviewPanel } from './components/PreviewPanel';
 import { Timeline } from './components/Timeline';
 import { useInsertMenuShortcuts } from './hooks/useInsertMenuShortcuts';
 import { useCanvasKeyboardShortcuts } from './hooks/useCanvasKeyboardShortcuts';
+import { HtmlEditorWorkspace } from './html-editor/HtmlEditorWorkspace';
 
 function DesignWorkspaceLayout() {
-  // Global keyboard shortcuts — mounted once, inside provider (has store access)
   useInsertMenuShortcuts();
   useCanvasKeyboardShortcuts();
 
   return (
     <div className="flex w-screen h-screen overflow-hidden">
-      {/* Left Rail — always visible, fixed width */}
       <LeftRail />
-
-      {/* Canvas region — all overlays live here as absolute children */}
       <div className="relative flex-1 overflow-hidden">
-        {/* Infinite pan/zoom canvas */}
         <CanvasArea />
-
-        {/* Floating left pane */}
         <LeftPane />
-
-        {/* Floating right panel — hidden when preview mode is active */}
         <RightPanel />
-
-        {/* Preview panel — shown when preview mode is active */}
         <PreviewPanel />
-
-        {/* Floating timeline — bottom, between LeftPane and RightPanel */}
         <Timeline />
       </div>
     </div>
   );
 }
 
-export default function App() {
+function CanvasEditorApp() {
   return (
     <DesignWorkspaceProvider>
       <DesignWorkspaceLayout />
     </DesignWorkspaceProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<CanvasEditorApp />} />
+      <Route path="/html-editor" element={<HtmlEditorWorkspace />} />
+    </Routes>
   );
 }
