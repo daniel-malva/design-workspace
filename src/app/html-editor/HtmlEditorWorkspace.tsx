@@ -35,7 +35,7 @@ function computePcts(containerWidth: number) {
 }
 
 function HtmlEditorShell() {
-  const [codePanelVisible, setCodePanelVisible] = useState(true);
+  const [codePanelVisible, setCodePanelVisible] = useState(false);
   const codePanelRef = useRef<ImperativePanelHandle>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -57,6 +57,11 @@ function HtmlEditorShell() {
     return () => ro.disconnect();
   }, []);
 
+  // Always start with code panel collapsed
+  useEffect(() => {
+    codePanelRef.current?.collapse();
+  }, []);
+
   const handleToggleCodePanel = useCallback(() => {
     const panel = codePanelRef.current;
     if (!panel) return;
@@ -72,7 +77,7 @@ function HtmlEditorShell() {
   return (
     <div className="flex w-screen h-screen overflow-hidden bg-[#f0f2f4]">
       {/* Left Rail — transparent, 72px */}
-      <HtmlEditorLeftRail />
+      <HtmlEditorLeftRail onToggleCodePanel={handleToggleCodePanel} codePanelVisible={codePanelVisible} />
 
       {/* Body area: 8px top/bottom padding, 8px right — panels go inside */}
       <div ref={bodyRef} className="flex-1 min-w-0 py-[8px] pr-[8px] h-full">

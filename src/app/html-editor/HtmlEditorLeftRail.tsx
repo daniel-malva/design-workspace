@@ -20,7 +20,12 @@ const railItems: RailItem[] = [
   { id: 'export',        icon: <Upload size={18} />,         label: 'Export'         },
 ];
 
-export function HtmlEditorLeftRail() {
+interface Props {
+  onToggleCodePanel: () => void;
+  codePanelVisible: boolean;
+}
+
+export function HtmlEditorLeftRail({ onToggleCodePanel, codePanelVisible }: Props) {
   const { activeRailItem, setActiveRailItem } = useHtmlEditor();
 
   return (
@@ -58,7 +63,12 @@ export function HtmlEditorLeftRail() {
               <Tooltip key={item.id}>
                 <TooltipTrigger asChild>
                   <button
-                    onClick={() => setActiveRailItem(item.id)}
+                    onClick={() => {
+                      if (item.id === 'code') {
+                        onToggleCodePanel();
+                      }
+                      setActiveRailItem(item.id);
+                    }}
                     aria-pressed={isActive}
                     aria-label={item.label}
                     className={`flex flex-col items-center gap-1 py-2 w-full rounded-xl transition-colors ${
