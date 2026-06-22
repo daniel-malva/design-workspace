@@ -56,38 +56,50 @@ export function HtmlTemplatePreview() {
   return (
     <div
       ref={containerRef}
-      className="relative flex-1 min-h-0 bg-[#f4f5f6] rounded-[16px] overflow-auto"
+      className="relative flex-1 min-h-0 bg-[#f4f5f6] rounded-[16px]"
     >
-      {/* Dimension badge */}
-      <div className="sticky top-4 left-4 z-10 inline-block pointer-events-none ml-4 mt-4">
+      {/* Scroll area anchored to container — min-height 100% resolves correctly here */}
+      <div style={{ position: 'absolute', inset: 0, overflow: 'auto' }}>
+        {/* Centering wrapper — fills scroll area, centers content */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 32,
+            boxSizing: 'border-box',
+            minHeight: '100%',
+            minWidth: '100%',
+          }}
+        >
+          {/* Outer div sized to scaled dimensions */}
+          <div
+            style={{ width: scaledW, height: scaledH, flexShrink: 0, position: 'relative' }}
+          >
+            <iframe
+              key={`preview-${dimensions.w}-${dimensions.h}-${previewRefreshKey}`}
+              srcDoc={debouncedHtml}
+              title="HTML template preview"
+              sandbox="allow-scripts"
+              aria-label="HTML template preview"
+              style={{
+                width: dimensions.w,
+                height: dimensions.h,
+                transform: `scale(${scale})`,
+                transformOrigin: 'top left',
+                border: 'none',
+                display: 'block',
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Dimension badge — absolute top-left, above scroll */}
+      <div className="absolute top-4 left-4 z-10 pointer-events-none">
         <span className="inline-flex items-center px-2.5 py-1 rounded-full border border-[#D0D0D0] bg-white text-[11px] font-medium text-[#4B4B4B]">
           {dimensions.w}x{dimensions.h}
         </span>
-      </div>
-
-      {/* Centering wrapper — takes up the full scrollable area */}
-      <div className="flex items-center justify-center p-12 min-h-full min-w-full box-border">
-        {/* Outer div sized to scaled dimensions — sets scrollable content size */}
-        <div
-          style={{ width: scaledW, height: scaledH, flexShrink: 0, position: 'relative' }}
-        >
-          {/* Iframe at natural dimensions, scaled via transform */}
-          <iframe
-            key={`preview-${dimensions.w}-${dimensions.h}-${previewRefreshKey}`}
-            srcDoc={debouncedHtml}
-            title="HTML template preview"
-            sandbox="allow-scripts"
-            aria-label="HTML template preview"
-            style={{
-              width: dimensions.w,
-              height: dimensions.h,
-              transform: `scale(${scale})`,
-              transformOrigin: 'top left',
-              border: 'none',
-              display: 'block',
-            }}
-          />
-        </div>
       </div>
     </div>
   );
